@@ -36,7 +36,7 @@ export const settings = pgTable("settings", {
   instagram: text("instagram").notNull().default(""),
   logoUrl: text("logo_url").notNull().default(""),
   /** Hide the "Customer tab" flow in POS Billing — the shop only takes walk-ins. */
-  walkInsOnly: boolean("walk_ins_only").notNull().default(false),
+  walkInsOnly: boolean("walk_ins_only").notNull().default(true),
   /** On-screen kitchen ticket queue (KOT) — when false the Kitchen page and nav hide. */
   kotEnabled: boolean("kot_enabled").notNull().default(true),
   /** When false the customer-facing site is menu-only: no cart, no tabs, no "send to kitchen".

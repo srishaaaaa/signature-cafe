@@ -218,6 +218,13 @@
       "when": 1791502400000,
       "tag": "0030_theme_colours",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791502500000,
+      "tag": "0031_hide_customer_tab",
+      "breakpoints": true
     }
   ]
 }

@@ -72,7 +72,7 @@ function Settings({ onClose }: { onClose: () => void }) {
     setWalkInsOnly(v);
     const r = await act("settings.update", { walkInsOnly: v });
     if (!r.ok) setWalkInsOnly(!v);
-    else toast({ kind: "ok", title: v ? "POS switched to counter walk-ins only." : "Customer tabs are back on." });
+    else toast({ kind: "ok", title: v ? "Customer tab is hidden in Billing." : "Customer tab is showing in Billing." });
   };
 
   const d = s.settings;
@@ -248,7 +248,7 @@ function Settings({ onClose }: { onClose: () => void }) {
 
         <section className="divide-y divide-slate-100 rounded-2xl border border-slate-100 bg-white p-4">
           <Toggle title="Customer ordering" desc="On: guests can scan, order and open a tab from their phone. Off: the site shows the menu card only." on={orderingEnabled} onChange={toggleOrdering} />
-          <Toggle title="Walk-ins only" desc="Hide the customer-tab flow in POS Billing. Every bill is a counter walk-in." on={walkInsOnly} onChange={toggleWalkIns} />
+          <Toggle title="Customer tab in Billing" desc="Show the Customer tab option in POS Billing, for billing guests who ordered from their phone. Off: every bill is a counter sale." on={!walkInsOnly} onChange={(v) => toggleWalkIns(!v)} />
         </section>
       </div>
     </Modal>
