@@ -17,7 +17,6 @@ const NAV: Nav[] = [
   { href: "/admin/billing", label: "Billing", icon: "billing", roles: ["admin", "staff"] },
   { href: "/admin/orders", label: "Orders", icon: "orders", roles: ["admin", "staff"] },
   { href: "/admin/analytics", label: "Analytics", icon: "chart", roles: ["admin"] },
-  { href: "/admin", label: "KOT", icon: "kitchen", roles: ["admin", "staff"], hideWhen: (s) => s.walkInsOnly || !s.orderingEnabled },
   { href: "/admin/inventory", label: "Inventory", icon: "box", roles: ["admin", "staff"] },
   { href: "/admin/inventory/ingredients", label: "Ingredients & waste", icon: "orders", roles: ["admin", "staff"] },
   { href: "/admin/inventory/movements", label: "Stock movement", icon: "list", roles: ["admin"] },
@@ -60,7 +59,6 @@ const Toggle = ({ title, desc, on, onChange }: { title: string; desc: string; on
 function Settings({ onClose }: { onClose: () => void }) {
   const { s, act, toast } = useAdmin();
   const [walkInsOnly, setWalkInsOnly] = useState(s.settings.walkInsOnly);
-  const [kotEnabled, setKotEnabled] = useState(s.settings.kotEnabled);
   const [orderingEnabled, setOrderingEnabled] = useState(s.settings.orderingEnabled);
 
   const toggleOrdering = async (v: boolean) => {
@@ -75,13 +73,6 @@ function Settings({ onClose }: { onClose: () => void }) {
     const r = await act("settings.update", { walkInsOnly: v });
     if (!r.ok) setWalkInsOnly(!v);
     else toast({ kind: "ok", title: v ? "POS switched to counter walk-ins only." : "Customer tabs are back on." });
-  };
-
-  const toggleKot = async (v: boolean) => {
-    setKotEnabled(v);
-    const r = await act("settings.update", { kotEnabled: v });
-    if (!r.ok) setKotEnabled(!v);
-    else toast({ kind: "ok", title: v ? "Kitchen queue (KOT) is on." : "Kitchen queue (KOT) is off." });
   };
 
   const d = s.settings;
@@ -251,14 +242,13 @@ function Settings({ onClose }: { onClose: () => void }) {
           <Field label="Default paper" hint="Thermal bill printers: pick the roll width. Sheet printers: pick the paper size."><select className={inputCls} value={form.printFormat} onChange={(e) => setForm({ ...form, printFormat: e.target.value })}>{PRINT_FORMAT_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}</select></Field>
         </Sec>
 
-        <Sec title="Tables" desc="Each table gets its own QR code, so every order shows which table it came from. Print the cards from Open tabs → Table QR cards.">
+        <Sec title="Tables" desc="Each table gets its own QR code, so every order shows which table it came from. The table QR codes are made from these numbers.">
           <Field label="Number of tables" hint="Tables are numbered 1 to this number. 0 = no tables (one shop QR only)."><input className={inputCls} type="number" min={0} max={200} inputMode="numeric" value={form.tableCount} onChange={set("tableCount")} /></Field>
         </Sec>
 
         <section className="divide-y divide-slate-100 rounded-2xl border border-slate-100 bg-white p-4">
           <Toggle title="Customer ordering" desc="On: guests can scan, order and open a tab from their phone. Off: the site shows the menu card only." on={orderingEnabled} onChange={toggleOrdering} />
           <Toggle title="Walk-ins only" desc="Hide the customer-tab flow in POS Billing. Every bill is a counter walk-in." on={walkInsOnly} onChange={toggleWalkIns} />
-          <Toggle title="Kitchen queue (KOT)" desc="On-screen kitchen tickets for the chef. Turn off if the kitchen doesn't need a queue." on={kotEnabled} onChange={toggleKot} />
         </section>
       </div>
     </Modal>
@@ -296,14 +286,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const fresh = s.orders.filter((o) => o.source === "customer" && o.status === "new").length;
   const kitchenPending = s.settings.kotEnabled ? s.orders.filter((o) => o.status === "new" || o.status === "preparing").length : 0;
   const billReq = floor.filter((f) => f.billRequested).length;
-  const busy = floor.length;
   const low = s.products.filter((p) => p.active && p.stock !== null && p.stock <= p.lowAt).length;
 
   const badge: Record<string, React.ReactNode> = {
-    "/admin": fresh ? (
+    "/admin/orders": fresh ? (
       <span className="adm-pulse grid h-5 min-w-5 place-items-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white">{fresh}</span>
-    ) : busy ? (
-      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">{busy}</span>
     ) : null,
     "/admin/kitchen": kitchenPending ? (
       <span className="grid h-5 min-w-5 place-items-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">{kitchenPending}</span>
@@ -329,7 +316,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const renderSide = (mini: boolean) => (
     <div className="flex h-full flex-col">
-      <Link href={role === "admin" ? "/admin" : "/admin/billing"} title={`${s.settings.shopName} · Admin`} className={cx("adm-side__brand flex items-center gap-3 pb-6 pt-6", mini ? "justify-center px-0" : "px-5")}>
+      <Link href="/admin/billing" title={`${s.settings.shopName} · Admin`} className={cx("adm-side__brand flex items-center gap-3 pb-6 pt-6", mini ? "justify-center px-0" : "px-5")}>
         <Cherry logo={s.settings.logoUrl} />
         {!mini && (
           <span className="leading-tight">
@@ -407,7 +394,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             {s.settings.shopName} · {role === "admin" ? "Admin" : "Staff"}
           </b>
           {fresh > 0 && (
-            <Link href="/admin" className="shrink-0 rounded-full bg-red-600 px-3 py-1 text-[12px] font-bold text-white">
+            <Link href="/admin/orders" className="shrink-0 rounded-full bg-red-600 px-3 py-1 text-[12px] font-bold text-white">
               {fresh} new
             </Link>
           )}
