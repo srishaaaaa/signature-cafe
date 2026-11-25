@@ -1,13 +1,16 @@
 import type { Metadata, Viewport } from "next";
-import { Bricolage_Grotesque, Instrument_Sans, Caveat, Cinzel } from "next/font/google";
+import { Cormorant_Garamond, Instrument_Sans, Pinyon_Script, Cinzel } from "next/font/google";
 import "./globals.css";
 import { shopTheme } from "@/lib/ops";
 import { DEFAULT_THEME, themeCss } from "@/lib/theme";
 
-const fraunces = Bricolage_Grotesque({
+/* Signature lounge type: an elegant serif for headings, a calligraphic script (in the
+   spirit of the logo) for small flourishes, and a clean sans for everything else. */
+const fraunces = Cormorant_Garamond({
   variable: "--font-display",
   subsets: ["latin"],
-  axes: ["opsz"],
+  weight: ["400", "500", "600", "700"],
+  style: ["normal", "italic"],
 });
 
 /* The wordmark's western face — used only for the shop name beside the logo, not for the rest of the app. */
@@ -22,9 +25,10 @@ const instrument = Instrument_Sans({
   subsets: ["latin"],
 });
 
-const caveat = Caveat({
+const caveat = Pinyon_Script({
   variable: "--font-hand",
   subsets: ["latin"],
+  weight: "400",
 });
 
 export const metadata: Metadata = {

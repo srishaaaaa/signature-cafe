@@ -656,3 +656,29 @@ html:has(.adm) {
 .inv__sign small {
   display: block;
 }
+
+/* ==========================================================================
+   SIGNATURE LOUNGE — the admin's share of the guest menu's look: serif titles,
+   a fine gold edge on the sidebar, an outlined gold active link and faint gold
+   outlines on cards. Colours come from the theme tokens (Settings → Theme colours).
+   ========================================================================== */
+.adm .adm-title {
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.adm-side {
+  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--cherry-lite) 45%, transparent);
+}
+.adm-side__brand b {
+  color: var(--cherry-lite);
+}
+.adm-link.is-on,
+.adm-link.is-on:hover {
+  background: color-mix(in srgb, var(--cherry-lite) 14%, transparent);
+  color: var(--cherry-lite);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cherry-lite) 45%, transparent);
+}
+.adm .bg-white.rounded-xl,
+.adm .bg-white.rounded-2xl {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cherry) 10%, transparent), 0 10px 24px -18px rgba(20, 19, 16, 0.35);
+}

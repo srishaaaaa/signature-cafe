@@ -568,12 +568,13 @@ export default function Menu({ initial, table = "" }: { initial: TabView; table?
       <section className="tm-hero">
         <p className="tm-hero__hi">
           {hello}
-          {tab?.name ? `, ${tab.name.split(" ")[0]}` : ""} ✺
+          {tab?.name ? `, ${tab.name.split(" ")[0]}` : ""}
           {ordering && tableNo ? <b style={{ marginLeft: 8, padding: "2px 10px", borderRadius: 999, background: "rgba(0,0,0,.07)", fontSize: ".8em" }}>Table {tableNo}</b> : null}
         </p>
         <h1 className="tm-hero__t">
-          What are we <em>having?</em>
+          Every cup, <em>a signature.</em>
         </h1>
+        <span className="tm-orn" aria-hidden="true">✦</span>
         <p className="tm-hero__sub">
           {ordering
             ? <>Order straight from your phone. We&apos;ll have it ready for you — pay at the counter when you&apos;re done.</>
@@ -586,7 +587,7 @@ export default function Menu({ initial, table = "" }: { initial: TabView; table?
               <path d="m20 20-4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
             <span className="sr-only">Search the menu</span>
-            <input type="search" placeholder="Burger, momos, mojito…" value={q} onChange={(e) => setQ(e.target.value)} />
+            <input type="search" placeholder="Search coffee, desserts, bites…" value={q} onChange={(e) => setQ(e.target.value)} />
           </label>
         </div>
       </section>
@@ -613,7 +614,7 @@ export default function Menu({ initial, table = "" }: { initial: TabView; table?
         {cats.map((c, ci) => (
           <section key={c.name} className="tm-cat" data-cat={ci} aria-labelledby={`cat-${ci}`}>
             <header className="tm-cat__head">
-              <span>({String(ci + 1).padStart(2, "0")})</span>
+              <span>{String(ci + 1).padStart(2, "0")}</span>
               <h2 id={`cat-${ci}`}>{c.name}</h2>
             </header>
             <ul>
