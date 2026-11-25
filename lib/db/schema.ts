@@ -52,6 +52,10 @@ export const settings = pgTable("settings", {
   tableCount: integer("table_count").notNull().default(0),
   /** what Print uses straight away: "thermal3" (3 inch roll), "thermal2", "A3", "A4" or "A5" */
   printFormat: text("print_format").notNull().default("thermal3"),
+  /** Colour theme (Settings → Theme colours): brand, dark and light, as #rrggbb. */
+  themeAccent: text("theme_accent").notNull().default("#9a7420"),
+  themeDark: text("theme_dark").notNull().default("#0d0d0d"),
+  themeLight: text("theme_light").notNull().default("#f6f1e2"),
 });
 
 /** Single row (id = 1): the change counter the admin panel polls, and the order-number sequence. */

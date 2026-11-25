@@ -3,10 +3,11 @@
 import ApprovalPopup from "./ApprovalPopup";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAdmin } from "./Store";
 import { PRINT_FORMAT_OPTIONS } from "./receipt";
 import { Btn, Field, Icon, Modal, Switch, cx, inputCls, type IconName } from "./kit";
+import { DEFAULT_THEME, THEME_PRESETS, THEME_SWATCHES, sameTheme, themeCss, type Theme } from "@/lib/theme";
 
 type Nav = { href: string; label: string; icon: IconName; roles: ("admin" | "staff")[]; requiresKot?: boolean; hideWhen?: (s: { walkInsOnly: boolean; kotEnabled: boolean; orderingEnabled: boolean }) => boolean };
 
@@ -90,6 +91,23 @@ function Settings({ onClose }: { onClose: () => void }) {
     upiId: d.upiId, upiName: d.upiName, upiPhone: d.upiPhone, upiQrMinutes: String(d.upiQrMinutes), tableCount: String(d.tableCount), printFormat: d.printFormat,
   });
   const [saving, setSaving] = useState(false);
+
+  /* Theme colours preview live: the page's theme stylesheet is rewritten as they change.
+     Closing without saving puts the saved colours back. */
+  const [theme, setTheme] = useState<Theme>(d.theme);
+  const savedTheme = useRef<Theme>(d.theme);
+  useEffect(() => {
+    const el = document.getElementById("shop-theme");
+    if (el) el.textContent = themeCss(theme);
+  }, [theme]);
+  useEffect(
+    () => () => {
+      const el = document.getElementById("shop-theme");
+      if (el) el.textContent = themeCss(savedTheme.current);
+    },
+    [],
+  );
+
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm({ ...form, [k]: e.target.value });
   /* Shrink a picked PNG/JPG to at most 160px in the browser and keep it as a small
      data URL, so the logo needs no file storage and stays well under the size limit. */
@@ -117,9 +135,12 @@ function Settings({ onClose }: { onClose: () => void }) {
   };
   const saveDetails = async () => {
     setSaving(true);
-    const r = await act("settings.update", form);
+    const r = await act("settings.update", { ...form, theme });
     setSaving(false);
-    if (r.ok) toast({ kind: "ok", title: "Shop details saved." });
+    if (r.ok) {
+      savedTheme.current = theme;
+      toast({ kind: "ok", title: "Settings saved." });
+    }
   };
 
   const two = "grid gap-3 sm:grid-cols-2";
@@ -133,7 +154,7 @@ function Settings({ onClose }: { onClose: () => void }) {
       footer={
         <>
           <Btn kind="plain" onClick={onClose}>Close</Btn>
-          <Btn kind="red" onClick={saveDetails} disabled={saving}>{saving ? "Saving…" : "Save shop details"}</Btn>
+          <Btn kind="red" onClick={saveDetails} disabled={saving}>{saving ? "Saving…" : "Save settings"}</Btn>
         </>
       }
     >
@@ -170,6 +191,51 @@ function Settings({ onClose }: { onClose: () => void }) {
             {form.logoUrl && <Btn kind="plain" onClick={() => setForm({ ...form, logoUrl: "" })}>Remove</Btn>}
           </div>
           <input className={inputCls} value={form.logoUrl.startsWith("data:") ? "" : form.logoUrl} maxLength={500} onChange={set("logoUrl")} placeholder={form.logoUrl.startsWith("data:") ? "Uploaded image in use" : "…or paste a link: https://…"} />
+        </Sec>
+
+        <Sec title="Theme colours" desc="Colours chosen to sit with the gold logo. Pick a ready-made pairing or mix your own. They repaint the guest menu, billing, the admin panel and receipts — press Save settings to keep them.">
+          <div className="flex flex-wrap gap-2">
+            {THEME_PRESETS.map((p) => (
+              <button
+                key={p.name}
+                type="button"
+                onClick={() => setTheme({ accent: p.accent, dark: p.dark, light: p.light })}
+                className={cx("flex items-center gap-2 rounded-xl border px-2.5 py-1.5 text-[12px] font-semibold text-slate-700", sameTheme(theme, p) ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white hover:bg-slate-50")}
+              >
+                <span className="flex overflow-hidden rounded-md border border-slate-200" aria-hidden="true">
+                  {[p.dark, p.accent, p.light].map((c) => <span key={c} className="h-5 w-3.5" style={{ background: c }} />)}
+                </span>
+                {p.name}
+              </button>
+            ))}
+          </div>
+          {([["accent", "Gold tone", "Buttons, prices, highlights"], ["dark", "Dark colour", "Headers, dark bands, text"], ["light", "Light colour", "Page background, cards"]] as const).map(([k, label, hint]) => (
+            <div key={k}>
+              <div className="flex items-baseline gap-2">
+                <b className="text-[12px] text-slate-800">{label}</b>
+                <span className="text-[11px] text-slate-500">{hint}</span>
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-2" role="radiogroup" aria-label={label}>
+                {THEME_SWATCHES[k].map((c) => {
+                  const on = theme[k] === c.hex;
+                  return (
+                    <button
+                      key={c.hex}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => setTheme({ ...theme, [k]: c.hex })}
+                      className={cx("flex items-center gap-1.5 rounded-full border py-1 pl-1 pr-2.5 text-[11.5px] font-semibold text-slate-700", on ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white hover:bg-slate-50")}
+                    >
+                      <span className="h-5 w-5 rounded-full border border-black/10" style={{ background: c.hex }} aria-hidden="true" />
+                      {c.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          {!sameTheme(theme, DEFAULT_THEME) && <Btn kind="plain" onClick={() => setTheme(DEFAULT_THEME)}>Reset to Onyx &amp; gold</Btn>}
         </Sec>
 
         <Sec title="Guests paying by UPI" desc="Guests see a UPI QR with their exact amount on their phone tab. It's your own UPI ID, so there are no fees — but staff confirm the payment in their UPI app. Leave the UPI ID blank to switch it off.">

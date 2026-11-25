@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Instrument_Sans, Caveat, Cinzel } from "next/font/google";
 import "./globals.css";
+import { shopTheme } from "@/lib/ops";
+import { DEFAULT_THEME, themeCss } from "@/lib/theme";
 
 const fraunces = Bricolage_Grotesque({
   variable: "--font-display",
@@ -29,21 +31,28 @@ export const metadata: Metadata = {
   title: "The Signature Café | Valasaravakkam, Chennai",
   description: "Order from your phone at The Signature Café — browse the menu, add to your tab and pay at the counter.",
   robots: { index: false, follow: false },
-  // the The Signature Café logo (public/icon.png)
+  // the Signature Café logo (public/icon.png)
   icons: { icon: "/icon.png", apple: "/icon.png" },
 };
 
-export const viewport: Viewport = {
-  themeColor: "#0d0d0d",
-};
+/* The colours picked in Admin → Settings → Theme colours repaint every page (menu, billing, admin, receipts). */
+const theme = () => shopTheme().catch(() => DEFAULT_THEME);
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export async function generateViewport(): Promise<Viewport> {
+  return { themeColor: (await theme()).dark };
+}
+
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const css = themeCss(await theme());
   return (
     <html
       lang="en"
       className={`${fraunces.variable} ${instrument.variable} ${caveat.variable} ${brand.variable} antialiased`}
     >
-      <body>{children}</body>
+      <body>
+        <style id="shop-theme" dangerouslySetInnerHTML={{ __html: css }} />
+        {children}
+      </body>
     </html>
   );
 }

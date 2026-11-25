@@ -4,6 +4,7 @@ import { code, uid } from "./seed";
 import { TZ, checkCoupon, computeBill, round2, shopToday } from "./money";
 import { hashPassword } from "./auth";
 import { db, type Db, type Tx } from "./db";
+import { cleanTheme, isSwatch, type Theme } from "./theme";
 import { batches, bills, coupons, expenseCategories, expenses, ingredients, meta, orders, products, recipes, sessions, settings, staffUsers, stockMovements, supplierInvoices, suppliers, approvalRequests, loyaltyCustomers, birthdays, birthdayConfig, loyaltyRewards, loyaltyCampaigns, loyaltyVouchers, giftOffers, productCategories } from "./db/schema";
 import * as L from "./loyalty/server";
 import { pointsPerUnit } from "./loyalty/engine";
@@ -201,6 +202,12 @@ export function shopName(): Promise<string> {
 export async function shopInfo(): Promise<ShopDetails & { shopName: string }> {
   const [d, n] = await Promise.all([shopDetailsOf(db), first(db.select({ n: settings.shopName }).from(settings).where(eq(settings.id, 1)))]);
   return { ...d, shopName: n?.n || "The Signature Café" };
+}
+
+/** The colour theme, for the root layout to paint every page with. */
+export async function shopTheme(): Promise<Theme> {
+  const r = await first(db.select({ accent: settings.themeAccent, dark: settings.themeDark, light: settings.themeLight }).from(settings).where(eq(settings.id, 1)));
+  return cleanTheme(r);
 }
 
 export async function shopLogo(): Promise<string> {
@@ -438,6 +445,7 @@ export async function adminState(): Promise<AdminState> {
       upiQrMinutes: st[0]?.upiQrMinutes ?? 5,
       tableCount: st[0]?.tableCount ?? 0,
       printFormat: st[0]?.printFormat ?? "thermal3",
+      theme: cleanTheme({ accent: st[0]?.themeAccent, dark: st[0]?.themeDark, light: st[0]?.themeLight }),
     },
     products: prods.map((p) => ({ ...p, image: imgLink(p.id, p.updatedAt, p.image) })),
     sessions: sess,
@@ -1202,6 +1210,13 @@ export async function runOp(tx: Tx, op: string, a: Args, role: string): Promise<
           patch.upiPhone = v;
         }
         if (a.upiQrMinutes !== undefined) patch.upiQrMinutes = int(a.upiQrMinutes, 1, 30, 5);
+        if (a.theme !== undefined) {
+          const t = (a.theme ?? {}) as Partial<Record<keyof Theme, unknown>>;
+          if (!isSwatch("accent", t.accent) || !isSwatch("dark", t.dark) || !isSwatch("light", t.light)) throw new ApiError("Pick the theme colours from the swatches shown.");
+          patch.themeAccent = String(t.accent).toLowerCase();
+          patch.themeDark = String(t.dark).toLowerCase();
+          patch.themeLight = String(t.light).toLowerCase();
+        }
         if (a.printFormat !== undefined) {
           if (!["thermal3", "thermal2", "A3", "A4", "A5"].includes(String(a.printFormat))) throw new ApiError("Choose a valid paper size.");
           patch.printFormat = String(a.printFormat);
