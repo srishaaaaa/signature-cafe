@@ -1,0 +1,803 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { UPI_CHANNELS, type Bill, type Coupon, type OrdersPageData, type UpiChannel } from "@/lib/types";
+import { computeBill, gstSplit, payLabel, payParts, round2, rupee, shopToday } from "@/lib/money";
+import { rangeOf, type Period } from "@/lib/analytics";
+import { useAdmin } from "./Store";
+import { billText, waLink } from "./receipt";
+import PrintModal from "./PrintModal";
+import { ItemSelect } from "./ItemSelect";
+import { Badge, Btn, Empty, Field, Icon, Modal, Page, PageHead, SearchBox, Switch, WaIcon, cx, downloadExcel, fmtDate, fmtDateTime, fmtTime, inputCls } from "./kit";
+
+type DateF = Extract<Period, "today" | "week" | "month" | "custom"> | "any";
+type PayF = "all" | "cash" | "upi" | "card" | "split";
+
+
+
+const th = "px-2.5 py-3.5 text-left text-[10.5px] font-bold uppercase tracking-[0.12em] text-slate-500 whitespace-nowrap";
+const td = "px-2.5 py-3 text-[13px] whitespace-nowrap";
+
+function Chip({ on, children, onClick, tone = "red" }: { on: boolean; children: React.ReactNode; onClick: () => void; tone?: "red" | "link" }) {
+  if (tone === "link")
+    return (
+      <button type="button" onClick={onClick} className="h-8 rounded-full px-3 text-[13px] font-semibold text-red-600 hover:bg-red-50">
+        {children}
+      </button>
+    );
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cx("h-8 whitespace-nowrap rounded-full px-4 text-[13px] font-semibold transition", on ? "bg-red-600 text-white shadow-[0_4px_10px_-4px_rgba(107, 117, 80,.9)]" : "bg-slate-100/80 text-slate-700 hover:bg-slate-200")}
+    >
+      {children}
+    </button>
+  );
+}
+
+const BATCH = 100;
+
+export default function OrdersPage() {
+  const { s, act, confirm, role } = useAdmin();
+  const [type, setType] = useState<"all" | "tab" | "counter">("all");
+  const [date, setDate] = useState<DateF>("any");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [q, setQ] = useState("");
+  const [pay, setPay] = useState<PayF>("all");
+  const [editing, setEditing] = useState<Bill | null>(null);
+  const [bill, setBill] = useState<Bill | null>(null);
+  const [printFor, setPrintFor] = useState<Bill | null>(null);
+
+  const remove = async (b: Bill) => {
+    const body =
+      b.status === "completed"
+        ? "It is removed from Orders and Analytics for good. Its items go back into stock and any coupon use is given back. This can't be undone."
+        : "This voided bill is removed from your records for good. This can't be undone.";
+    if (await confirm({ title: `Delete ${b.invoiceNo}?`, body, ok: "Delete bill", danger: true })) {
+      const r = await act("bill.delete", { id: b.id });
+      if (r.ok && bill?.id === b.id) setBill(null);
+    }
+  };
+
+  /* The list is fetched from the server 100 bills at a time ("Show more" fetches the next 100), and the payment-method
+     boxes are totals over every matching bill — so the page stays quick and correct however many bills the shop has. */
+  const range = date === "any" ? null : rangeOf(date, from, to);
+  const rf = range && Number.isFinite(range.from) ? range.from : 0;
+  const rt = range && Number.isFinite(range.to) ? range.to : 0;
+  const needle = q.trim();
+  const query = useMemo(() => ({ type, pay, q: needle, from: rf || "", to: rt || "" }), [type, pay, needle, rf, rt]);
+  const key = JSON.stringify(query);
+
+  type Loaded = { key: string; rows: Bill[]; total: number; boxes: OrdersPageData["boxes"] };
+  const [data, setData] = useState<Loaded | null>(null);
+  const [moreBusy, setMoreBusy] = useState(false);
+  const loaded = useRef({ key: "", n: BATCH });
+  const fetchPage = (qs: Record<string, string | number>, offset: number, size: number, extra = "") => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(qs)) if (v !== "" && v !== undefined) p.set(k, String(v));
+    p.set("offset", String(offset));
+    p.set("size", String(size));
+    return fetch(`/api/admin/orders?${p}${extra}`, { cache: "no-store" }).then((r) => r.json());
+  };
+
+  /* Reload when a filter changes (back to the first 100) or when anything in the shop changes (an edit, a new bill),
+     keeping as many bills on screen as were already loaded. */
+  useEffect(() => {
+    let dead = false;
+    const size = loaded.current.key === key ? Math.max(BATCH, loaded.current.n) : BATCH;
+    fetchPage(JSON.parse(key), 0, size)
+      .then((d: OrdersPageData & { error?: string }) => {
+        if (dead || d.error) return;
+        loaded.current = { key, n: d.rows.length };
+        setData({ key, rows: d.rows, total: d.total, boxes: d.boxes });
+      })
+      .catch(() => {});
+    return () => {
+      dead = true;
+    };
+  }, [key, s.version]);
+
+  const showMore = async () => {
+    if (!data || moreBusy || data.key !== key) return;
+    setMoreBusy(true);
+    try {
+      const d: OrdersPageData & { error?: string } = await fetchPage(query, data.rows.length, BATCH);
+      if (d.error) return;
+      const have = new Set(data.rows.map((r) => r.id));
+      const rows = [...data.rows, ...d.rows.filter((r) => !have.has(r.id))];
+      loaded.current = { key, n: rows.length };
+      setData({ ...data, rows, total: d.total, boxes: d.boxes });
+    } finally {
+      setMoreBusy(false);
+    }
+  };
+
+  const slice = data?.rows ?? [];
+  const count = data?.total ?? 0;
+  const left = count - slice.length;
+  const loading = !data || data.key !== key;
+  const zero = { amount: 0, count: 0 };
+  const boxes = data?.boxes ?? { all: zero, cash: zero, upi: zero, card: zero, split: zero };
+
+  /* The Excel download covers every bill the filters match, not just the ones listed so far. */
+  const [exporting, setExporting] = useState(false);
+  const stamp = () => new Date().toISOString().slice(0, 10);
+  const exportExcel = async () => {
+    setExporting(true);
+    try {
+      const d: OrdersPageData & { error?: string } = await fetchPage(query, 0, 100, "&export=1");
+      if (d.error) return;
+      downloadExcel(`bills-${stamp()}.xlsx`, [{ name: "Bills", rows: exportRows(d.rows) }]);
+    } finally {
+      setExporting(false);
+    }
+  };
+  const exportRows = (list: Bill[]): (string | number)[][] => [
+    ["Invoice", "Type", "Customer", "Mobile", "Items", "Subtotal", "Coupon", "Coupon discount", "Manual discount", "Extra", "Bill type", "GST %", "Taxable amount", "CGST", "SGST", "GST amount", "Total", "Payment", "UPI came through", "Cash", "UPI", "Card", "Status", "Date", "Time", "Reward", "Reward discount", "Points redeemed", "Points discount", "Points earned"],
+    ...list.map((b) => [b.invoiceNo, b.source, b.customerName, b.customerPhone, b.itemCount, b.subtotal, b.couponCode ?? "", b.couponDiscount, b.manualDiscount, b.extra, b.isGst ? "GST" : "Non-GST", b.gstPercent, b.taxableAmount, gstSplit(b.gstPercent, b.gstAmount).cgst, gstSplit(b.gstPercent, b.gstAmount).sgst, b.gstAmount, b.total, b.payment, UPI_CHANNELS.find((c) => c.key === b.upiChannel)?.label ?? "", b.cashAmount, b.upiAmount, b.cardAmount, b.status, fmtDate(b.createdAt), fmtTime(b.createdAt), b.rewardName ?? "", b.rewardDiscount, b.pointsRedeemed, b.pointsDiscount, b.pointsEarned]),
+  ];
+
+  /* the same five buttons on every bill, in the table and on the phone cards */
+  const rowActions = (b: Bill) => (
+    <span className="inline-flex gap-1.5 md:gap-1">
+                        {b.customerPhone && (
+                          <a suppressHydrationWarning href={waLink(b.customerPhone, billText(b, s.settings.shopName, s.settings.publicUrl))} target="_blank" rel="noopener noreferrer" title="Send on WhatsApp" aria-label="Send on WhatsApp" className="grid h-9 w-9 place-items-center md:h-8 md:w-8 rounded-lg bg-emerald-50 text-[#22c55e] hover:bg-emerald-100">
+                            <WaIcon size={18} />
+                          </a>
+                        )}
+                        <button type="button" title="View details" aria-label="View details" onClick={() => setBill(b)} className="grid h-9 w-9 place-items-center md:h-8 md:w-8 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200">
+                          <Icon name="eye" size={16} />
+                        </button>
+                        <button type="button" title="Edit details" aria-label="Edit details" onClick={() => setEditing(b)} className="grid h-9 w-9 place-items-center md:h-8 md:w-8 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200">
+                          <Icon name="edit" size={16} />
+                        </button>
+                        <button type="button" title="Print receipt" aria-label="Print receipt" onClick={() => setPrintFor(b)} className="grid h-9 w-9 place-items-center md:h-8 md:w-8 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200">
+                          <Icon name="print" size={16} />
+                        </button>
+                        {role === "admin" && (
+                          <button type="button" title="Delete bill" aria-label="Delete bill" onClick={() => remove(b)} className="grid h-9 w-9 place-items-center md:h-8 md:w-8 rounded-lg bg-red-50 text-red-600 hover:bg-red-100">
+                            <Icon name="trash" size={16} />
+                          </button>
+                        )}
+                      </span>
+  );
+
+  return (
+    <Page>
+      <PageHead
+        title="Order Management"
+        right={
+          <Link href="/admin/billing" className="inline-flex h-11 items-center gap-2 rounded-xl bg-red-600 px-5 text-[14px] font-bold text-white shadow-[0_6px_16px_-8px_rgba(107, 117, 80,.8)] hover:bg-red-700">
+            <Icon name="cart" size={18} /> Open POS
+          </Link>
+        }
+      />
+
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+        {(
+          [
+            ["all", "All payments", "Total billed", "bg-slate-100 text-slate-600"],
+            ["cash", "Cash", "Collected in cash", "bg-emerald-50 text-emerald-600"],
+            ["upi", "UPI / GPay / QR", "Collected by UPI", "bg-violet-50 text-violet-600"],
+            ["card", "Card", "Collected by card", "bg-sky-50 text-sky-600"],
+            ["split", "Split bills", "Paid with 2+ methods", "bg-amber-50 text-amber-600"],
+          ] as const
+        ).map(([k, label, hint, tone]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setPay(pay === k ? "all" : k)}
+            aria-pressed={pay === k}
+            className={cx("min-w-0 rounded-2xl border bg-white p-4 text-left shadow-[0_2px_10px_-2px_rgba(15,23,42,.08)] transition hover:border-slate-300 active:scale-[.99]", pay === k ? "border-red-300 ring-2 ring-red-100" : "border-slate-100")}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-600">{label}</span>
+              <span className={cx("grid h-7 w-7 shrink-0 place-items-center rounded-full", tone)}>
+                <Icon name="rupee" size={14} stroke={2.4} />
+              </span>
+            </div>
+            <div className="adm-num mt-2 truncate text-[22px] font-extrabold text-slate-900">{rupee(boxes[k].amount)}</div>
+            <p className="mt-1 truncate text-[11px] text-slate-400">
+              {boxes[k].count} bill{boxes[k].count === 1 ? "" : "s"} · {hint}
+            </p>
+          </button>
+        ))}
+      </div>
+
+      <div className="mb-5 flex flex-col gap-4 rounded-2xl border border-slate-100 p-5 shadow-[0_2px_10px_-2px_rgba(15,23,42,.08)] lg:flex-row lg:items-center lg:justify-between">
+        <div className="space-y-3">
+          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+            <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 sm:w-16">Type</span>
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {(
+              [
+                ["all", "All Bills"],
+                ["tab", "Customer tab"],
+                ["counter", "Counter"],
+              ] as const
+            ).map(([v, t]) => (
+              <Chip key={v} on={type === v} onClick={() => setType(v)}>
+                {t}
+              </Chip>
+            ))}
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+            <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 sm:w-16">Paid by</span>
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {(
+              [
+                ["all", "All"],
+                ["cash", "Cash"],
+                ["upi", "UPI"],
+                ["card", "Card"],
+                ["split", "Split"],
+              ] as const
+            ).map(([v, t]) => (
+              <Chip key={v} on={pay === v} onClick={() => setPay(v)}>
+                {t}
+              </Chip>
+            ))}
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+            <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 sm:w-16">Date</span>
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {(
+              [
+                ["today", "Today"],
+                ["week", "This Week"],
+                ["month", "This Month"],
+                ["custom", "Custom Range"],
+              ] as const
+            ).map(([v, t]) => (
+              <Chip key={v} on={date === v} onClick={() => setDate(v)}>
+                {t}
+              </Chip>
+            ))}
+            {date !== "any" && (
+              <Chip on={false} tone="link" onClick={() => (setDate("any"), setFrom(""), setTo(""))}>
+                Clear Dates
+              </Chip>
+            )}
+            {date === "custom" && (
+              <span className="adm-in flex items-center gap-2 text-[12px] text-slate-500">
+                <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} className="h-8 rounded-lg border border-slate-200 px-2 text-slate-800" />
+                to
+                <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} className="h-8 rounded-lg border border-slate-200 px-2 text-slate-800" />
+              </span>
+            )}
+            </div>
+          </div>
+        </div>
+        <SearchBox value={q} onChange={setQ} placeholder="Search invoice, name, mobile, item…" className="w-full lg:w-80" />
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
+        <span className="text-[12.5px] font-semibold text-slate-600">{count} result(s)</span>
+        <button type="button" onClick={exportExcel} disabled={!count || exporting} className="inline-flex items-center gap-1.5 text-[13px] font-bold text-emerald-700 hover:underline disabled:opacity-40">
+          <Icon name="download" size={15} /> {exporting ? "Preparing…" : "Export Excel"}
+        </button>
+      </div>
+
+      {/* phones: one card per bill, no sideways scrolling */}
+      <ul className="space-y-3 md:hidden">
+        {slice.map((b) => (
+          <li key={b.id} className={cx("rounded-2xl border border-slate-100 bg-white p-3.5 shadow-[0_2px_10px_-2px_rgba(15,23,42,.08)]", b.status === "void" && "opacity-60")}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <button type="button" onClick={() => setBill(b)} className="block max-w-full truncate text-left text-[14px] font-bold text-red-600">
+                  {b.invoiceNo}
+                </button>
+                <span className="mt-0.5 block truncate text-[13px] font-semibold text-slate-800">{b.customerName || "—"}</span>
+                {b.customerPhone && <span className="block text-[12px] text-slate-500">{b.customerPhone}</span>}
+              </div>
+              <div className="shrink-0 text-right">
+                <b className="block text-[17px] leading-none text-slate-900">{rupee(b.total)}</b>
+                <span className="mt-1 block text-[11.5px] text-slate-500">{fmtDate(b.createdAt)}</span>
+              </div>
+            </div>
+            <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+              {b.source === "tab" ? <Badge tone="orange">Customer tab</Badge> : <Badge tone="sky">Counter</Badge>}
+              {b.status === "completed" ? <Badge tone="green">Completed</Badge> : <Badge tone="slate">Void</Badge>}
+              <span className="text-[12px] text-slate-600">{payLabel(b)}</span>
+            </div>
+            <div className="mt-3 flex justify-end border-t border-slate-100 pt-3">{rowActions(b)}</div>
+          </li>
+        ))}
+      </ul>
+
+      <div className="hidden overflow-hidden rounded-2xl border border-slate-100 shadow-[0_2px_10px_-2px_rgba(15,23,42,.08)] md:block">
+        <div className="overflow-x-auto adm-scroll">
+            <table className="w-full min-w-[780px]">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  <th className={th}>Invoice no</th>
+                  <th className={th}>Customer name</th>
+                  <th className={th}>Mobile</th>
+                  <th className={th}>Bill type</th>
+                  <th className={th}>Total</th>
+                  <th className={th}>Payment</th>
+                  <th className={th}>Date</th>
+                  <th className={cx(th, "text-center")}>Status</th>
+                  <th className={cx(th, "text-right")}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {slice.map((b) => (
+                  <tr key={b.id} className={cx("border-b border-slate-100 transition-colors hover:bg-slate-50/60", b.status === "void" && "opacity-55")}>
+                    <td className={td}>
+                      <button type="button" onClick={() => setBill(b)} className="inline-flex items-center gap-2 font-bold text-red-600">
+                        {b.invoiceNo}
+                      </button>
+                    </td>
+                    <td className={cx(td, "font-semibold text-slate-800")}>{b.customerName || "—"}</td>
+                    <td className={cx(td, "adm-num text-slate-600")}>{b.customerPhone || <span className="text-slate-400">—</span>}</td>
+                    <td className={td}>{b.source === "tab" ? <Badge tone="orange">Customer tab</Badge> : <Badge tone="sky">Counter</Badge>}</td>
+                    <td className={cx(td, "font-bold text-slate-900")}>{rupee(b.total)}</td>
+                    <td className={cx(td, "text-slate-600")}>{payLabel(b)}</td>
+                    <td className={cx(td, "text-slate-600")}>{fmtDate(b.createdAt)}</td>
+                    <td className={cx(td, "text-center")}>{b.status === "completed" ? <Badge tone="green">Completed</Badge> : <Badge tone="slate">Void</Badge>}</td>
+                    <td className={cx(td, "text-right")}>
+                      {rowActions(b)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          {!count && (
+            <Empty icon="billing" title={loading ? "Loading bills…" : "No bills match"}>
+              {loading ? null : "Settled tabs and counter bills show up here."}
+            </Empty>
+          )}
+        </div>
+      </div>
+      {!count && (
+        <div className="md:hidden">
+          <Empty icon="billing" title={loading ? "Loading bills…" : "No bills match"}>
+            {loading ? null : "Settled tabs and counter bills show up here."}
+          </Empty>
+        </div>
+      )}
+      {count > 0 && (
+        <div className="mt-4 flex flex-col items-center gap-3 text-[13px] text-slate-500">
+          <span>
+            Showing <b className="text-slate-800">{slice.length}</b> of <b className="text-slate-800">{count}</b> invoice{count === 1 ? "" : "s"}
+          </span>
+          {left > 0 && (
+            <button type="button" onClick={showMore} disabled={moreBusy || loading} className="h-10 rounded-xl bg-slate-100 px-6 text-[13px] font-bold text-slate-800 transition hover:bg-slate-200 disabled:opacity-60">
+              {moreBusy ? "Loading…" : `Show ${Math.min(BATCH, left)} more`}
+            </button>
+          )}
+        </div>
+      )}
+
+      <PrintModal bill={printFor} onClose={() => setPrintFor(null)} />
+      {editing && (
+        <EditBill
+          key={editing.id}
+          b={editing}
+          admin={role === "admin"}
+          onClose={() => setEditing(null)}
+          onSaved={(nb) => {
+            if (bill?.id === nb.id) setBill(nb);
+          }}
+        />
+      )}
+
+      {/* ---------- bill detail ---------- */}
+      <Modal
+        open={!!bill}
+        onClose={() => setBill(null)}
+        title={bill?.invoiceNo ?? ""}
+        footer={
+          bill && (
+            <>
+              {bill.status === "completed" && (
+                <Btn
+                  kind="plain"
+                  className="mr-auto text-red-600"
+                  onClick={async () => {
+                    if (await confirm({ title: `Void ${bill.invoiceNo}?`, body: "It drops out of revenue, its items return to stock and any coupon use is given back. This can't be undone.", ok: "Void bill", danger: true })) {
+                      const r = await act<Bill>("bill.void", { id: bill.id });
+                      if (r.ok) setBill(r.result);
+                    }
+                  }}
+                >
+                  Void bill
+                </Btn>
+              )}
+              {bill.customerPhone && (
+                <a href={waLink(bill.customerPhone, billText(bill, s.settings.shopName, s.settings.publicUrl))} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#22c55e] px-4 text-[13px] font-semibold text-white hover:bg-[#16a34a]">
+                  <WaIcon size={16} /> WhatsApp
+                </a>
+              )}
+              <a href={`/invoice/${bill.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center rounded-xl border border-slate-200 px-4 text-[13px] font-semibold text-slate-700 hover:bg-slate-50">
+                View invoice
+              </a>
+              <Btn icon="edit" onClick={() => setEditing(bill)}>
+                Edit details
+              </Btn>
+              <Btn kind="dark" icon="print" onClick={() => setPrintFor(bill)}>
+                Print
+              </Btn>
+            </>
+          )
+        }
+      >
+        {bill && (
+          <div className="text-[13.5px]">
+            <div className="grid grid-cols-2 gap-3 rounded-2xl bg-slate-50 p-4">
+              <p>
+                <span className="block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Customer</span>
+                <b>{bill.customerName || "—"}</b>
+                <span className="block text-slate-500">{bill.customerPhone || "no phone"}</span>
+              </p>
+              <p className="text-right">
+                <span className="block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">{bill.source === "tab" ? "Customer tab" : "Counter"}</span>
+                <b>{fmtDateTime(bill.createdAt)}</b>
+                <span className="block">{bill.status === "completed" ? <Badge tone="green">Completed</Badge> : <Badge tone="slate">Void</Badge>}</span>
+              </p>
+            </div>
+            <ul className="my-4 divide-y divide-dashed divide-slate-200">
+              {bill.items.map((i, k) => (
+                <li key={k} className="flex justify-between gap-3 py-2">
+                  <span>
+                    <b>{i.qty}×</b> {i.name} <span className="text-slate-400">@ {rupee(i.price)}</span>
+                  </span>
+                  <b>{rupee(i.qty * i.price)}</b>
+                </li>
+              ))}
+            </ul>
+            <dl className="space-y-1.5 border-t border-slate-200 pt-3">
+              <div className="flex justify-between">
+                <dt className="text-slate-500">Subtotal ({bill.itemCount} items)</dt>
+                <dd>{rupee(bill.subtotal)}</dd>
+              </div>
+              {bill.couponDiscount > 0 && (
+                <div className="flex justify-between text-red-600">
+                  <dt>
+                    Coupon {bill.couponCode} ({bill.couponPercent}%)
+                  </dt>
+                  <dd>-{rupee(bill.couponDiscount)}</dd>
+                </div>
+              )}
+              {bill.manualDiscount > 0 && (
+                <div className="flex justify-between text-red-600">
+                  <dt>Discount{bill.manualType === "percent" ? ` (${bill.manualValue}%)` : ""}</dt>
+                  <dd>-{rupee(bill.manualDiscount)}</dd>
+                </div>
+              )}
+              {bill.rewardDiscount > 0 && (
+                <div className="flex justify-between text-red-600">
+                  <dt>Reward {bill.rewardName}</dt>
+                  <dd>-{rupee(bill.rewardDiscount)}</dd>
+                </div>
+              )}
+              {bill.pointsDiscount > 0 && (
+                <div className="flex justify-between text-red-600">
+                  <dt>Loyalty points ({bill.pointsRedeemed} pts)</dt>
+                  <dd>-{rupee(bill.pointsDiscount)}</dd>
+                </div>
+              )}
+              {bill.pointsEarned > 0 && (
+                <div className="flex justify-between text-amber-700">
+                  <dt>Loyalty points earned</dt>
+                  <dd>{bill.pointsEarned} pts</dd>
+                </div>
+              )}
+              {bill.extra > 0 && (
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Extra charges</dt>
+                  <dd>{rupee(bill.extra)}</dd>
+                </div>
+              )}
+              {bill.isGst ? (
+                <>
+                  <div className="flex justify-between">
+                    <dt className="text-slate-500">Taxable amount</dt>
+                    <dd>{rupee(bill.taxableAmount)}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-slate-500">CGST ({gstSplit(bill.gstPercent, bill.gstAmount).rate}%)</dt>
+                    <dd>{rupee(gstSplit(bill.gstPercent, bill.gstAmount).cgst)}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-slate-500">SGST ({gstSplit(bill.gstPercent, bill.gstAmount).rate}%)</dt>
+                    <dd>{rupee(gstSplit(bill.gstPercent, bill.gstAmount).sgst)}</dd>
+                  </div>
+                  <div className="flex justify-between font-semibold text-slate-700">
+                    <dt>Total GST ({bill.gstPercent}%)</dt>
+                    <dd>{rupee(bill.gstAmount)}</dd>
+                  </div>
+                </>
+              ) : (
+                <div className="flex justify-between text-slate-400">
+                  <dt>Non-GST bill</dt>
+                  <dd>GST not applicable</dd>
+                </div>
+              )}
+              <div className="flex justify-between pt-2 text-[17px]">
+                <dt className="font-bold">Grand total</dt>
+                <dd className="adm-num font-extrabold">{rupee(bill.total)}</dd>
+              </div>
+              <div className="flex justify-between text-slate-500">
+                <dt>Paid · {payLabel(bill)}</dt>
+                <dd>
+                  {rupee(bill.received)}
+                  {bill.change > 0 && ` (change ${rupee(bill.change)})`}
+                </dd>
+              </div>
+              {bill.payment === "split" && (
+                <div className="flex justify-between text-[12px] text-slate-400">
+                  <dt>Split</dt>
+                  <dd>{payParts(bill).map(([m, n]) => `${m} ${rupee(n)}`).join(" · ")}</dd>
+                </div>
+              )}
+            </dl>
+          </div>
+        )}
+      </Modal>
+    </Page>
+  );
+}
+
+let itemSeq = 0; // keys for the item rows in the edit form
+
+/* Edit an invoice: who it was for, its date, its items and prices, the discount, extra charges
+   and GST (the total is worked out again), and how it was paid. Changing quantities puts stock
+   back or takes it out. A bill that earned or used loyalty points, or a voided one, keeps its
+   amounts — void it and bill again for those. Staff edits go to the admin to approve. */
+function EditBill({ b, admin, onClose, onSaved }: { b: Bill; admin: boolean; onClose: () => void; onSaved: (b: Bill) => void }) {
+  const { act, toast, s: shop } = useAdmin();
+  const [f, setF] = useState({
+    customerName: b.customerName,
+    customerPhone: b.customerPhone,
+    invoiceDate: shopToday(b.createdAt),
+    payment: b.payment as string,
+    cashAmount: b.cashAmount ? String(b.cashAmount) : "",
+    upiAmount: b.upiAmount ? String(b.upiAmount) : "",
+    cardAmount: b.cardAmount ? String(b.cardAmount) : "",
+    upiChannel: (b.upiChannel || "counter_qr") as UpiChannel,
+    manualType: b.manualType as string,
+    manualValue: b.manualValue ? String(b.manualValue) : "",
+    extra: b.extra ? String(b.extra) : "",
+    isGst: b.isGst,
+    gstPercent: String(b.gstPercent || 18),
+  });
+  const [items, setItems] = useState(() => b.items.map((i) => ({ key: ++itemSeq, productId: i.productId, name: i.name, price: String(i.price), qty: i.qty })));
+  const [busy, setBusy] = useState(false);
+
+  const loyaltyLocked = !!b.loyaltyCustomerId || b.pointsEarned > 0 || b.pointsRedeemed > 0 || b.rewardDiscount > 0 || b.pointsDiscount > 0;
+  const amountsLocked = loyaltyLocked || b.status !== "completed";
+  const setItem = (key: number, p: Partial<(typeof items)[number]>) => setItems((xs) => xs.map((x) => (x.key === key ? { ...x, ...p } : x)));
+
+  // the new totals, worked out the way the server will
+  const coupon: Coupon | null = b.couponCode ? { id: "", audience: "all", code: b.couponCode, percent: b.couponPercent, minOrder: 0, expiresAt: null, limit: null, used: 0, active: true, restricted: false, phones: [], sent: 0, createdAt: 0 } : null;
+  const clean = items.filter((i) => i.name.trim() && Number(i.price) >= 0 && i.qty >= 1).map((i) => ({ productId: i.productId, name: i.name.trim(), price: Number(i.price) || 0, qty: i.qty }));
+  const calc = computeBill({ items: clean, coupon, manualType: f.manualType === "percent" ? "percent" : "amount", manualValue: Number(f.manualValue) || 0, extra: Number(f.extra) || 0, gst: f.isGst, gstPercent: Number(f.gstPercent) || 0 });
+  const total = amountsLocked ? b.total : calc.total;
+
+  const split = f.payment === "split";
+  const sum = round2((Number(f.cashAmount) || 0) + (Number(f.upiAmount) || 0) + (Number(f.cardAmount) || 0));
+  const splitBad = split && Math.abs(sum - total) > 0.01;
+  const noItems = !amountsLocked && !clean.length;
+
+  const save = async () => {
+    setBusy(true);
+    const r = await act<Bill>("bill.edit", {
+      id: b.id,
+      customerName: f.customerName,
+      customerPhone: f.customerPhone,
+      invoiceDate: f.invoiceDate,
+      payment: f.payment,
+      cashAmount: f.cashAmount,
+      upiAmount: f.upiAmount,
+      cardAmount: f.cardAmount,
+      ...(f.payment === "upi" || (split && Number(f.upiAmount) > 0) ? { upiChannel: f.upiChannel } : {}),
+      ...(amountsLocked ? {} : { items: clean, manualType: f.manualType, manualValue: f.manualValue, extra: f.extra, isGst: f.isGst, gstPercent: f.gstPercent }),
+    });
+    setBusy(false);
+    if (r.ok) {
+      if (!r.pending) {
+        toast({ kind: "ok", title: `${b.invoiceNo} updated` });
+        onSaved(r.result);
+      }
+      onClose();
+    }
+  };
+
+  const lbl = "mb-1 block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500";
+  return (
+    <Modal
+      open
+      wide
+      onClose={onClose}
+      title={`Edit invoice · ${b.invoiceNo}`}
+      footer={
+        <>
+          <Btn onClick={onClose}>Cancel</Btn>
+          <Btn kind="dark" disabled={busy || splitBad || noItems} onClick={save}>
+            {busy ? "Saving…" : admin ? "Save changes" : "Send for approval"}
+          </Btn>
+        </>
+      }
+    >
+      <div className="space-y-5">
+        {!admin && <p className="rounded-xl bg-amber-50 px-4 py-2.5 text-[12.5px] font-semibold text-amber-800">Your changes go to the admin, and apply only once they approve.</p>}
+
+        <section className="grid gap-3 sm:grid-cols-3">
+          <Field label="Customer name">
+            <input className={inputCls} value={f.customerName} maxLength={80} onChange={(e) => setF({ ...f, customerName: e.target.value })} />
+          </Field>
+          <Field label="Mobile" hint={loyaltyLocked ? "Fixed — this bill used loyalty." : undefined}>
+            <input className={inputCls} inputMode="numeric" disabled={loyaltyLocked} value={f.customerPhone} maxLength={14} onChange={(e) => setF({ ...f, customerPhone: e.target.value.replace(/[^\d+ ]/g, "") })} />
+          </Field>
+          <Field label="Invoice date" hint={loyaltyLocked ? "Fixed — this bill used loyalty." : undefined}>
+            <input className={inputCls} type="date" disabled={loyaltyLocked} max={shopToday()} value={f.invoiceDate} onChange={(e) => setF({ ...f, invoiceDate: e.target.value })} />
+          </Field>
+        </section>
+
+        <section>
+          <div className="mb-2 flex items-center justify-between">
+            <span className={lbl}>Items <span className="ml-1 font-medium normal-case tracking-normal text-slate-400">— pick from your inventory, the price fills in</span></span>
+            {!amountsLocked && (
+              <Btn size="sm" icon="plus" onClick={() => setItems((xs) => [...xs, { key: ++itemSeq, productId: null, name: "", price: "", qty: 1 }])}>
+                Add item
+              </Btn>
+            )}
+          </div>
+          {amountsLocked && (
+            <p className="mb-2 rounded-xl bg-slate-50 px-3.5 py-2 text-[12.5px] text-slate-600">
+              {b.status !== "completed" ? "This bill is void, so its items and amounts can't be changed." : "This bill earned or used loyalty points, so its items and amounts are fixed. Void it and bill again to change them."}
+            </p>
+          )}
+          <ul className="space-y-2">
+            {items.map((i) => (
+              <li key={i.key} className="grid grid-cols-[minmax(0,1fr)_72px_auto] items-center gap-2 sm:grid-cols-[minmax(0,1fr)_88px_72px_auto]">
+                {amountsLocked ? (
+                  <input className={cx(inputCls, "col-span-3 sm:col-span-1")} disabled value={i.name} aria-label="Item name" readOnly />
+                ) : (
+                  <ItemSelect
+                    className="col-span-3 h-11 sm:col-span-1"
+                    products={shop.products}
+                    value={i.productId ?? ""}
+                    none={i.name || "Pick an item from inventory…"}
+                    title="Pick an item from your inventory"
+                    onChange={(id) => {
+                      const p = shop.products.find((x) => x.id === id);
+                      if (p) setItem(i.key, { productId: p.id, name: p.name, price: String(p.price) });
+                    }}
+                  />
+                )}
+                <input className={cx(inputCls, "text-right")} disabled={amountsLocked} type="number" min={0} step="0.5" inputMode="decimal" value={i.price} placeholder="Price" onChange={(e) => setItem(i.key, { price: e.target.value })} aria-label="Price" />
+                <input className={cx(inputCls, "text-right")} disabled={amountsLocked} type="number" min={1} max={999} step={1} inputMode="numeric" value={i.qty} onChange={(e) => setItem(i.key, { qty: Math.max(1, Math.min(999, Math.floor(Number(e.target.value)) || 1)) })} aria-label="Quantity" />
+                {!amountsLocked && items.length > 1 ? (
+                  <button type="button" onClick={() => setItems((xs) => xs.filter((x) => x.key !== i.key))} className="grid h-10 w-10 place-items-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600" aria-label="Remove item">
+                    <Icon name="x" size={15} />
+                  </button>
+                ) : (
+                  <span className="w-10" />
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        {!amountsLocked && (
+          <section className="grid gap-3 sm:grid-cols-3">
+            <Field label="Discount">
+              <div className="flex gap-2">
+                <select className={cx(inputCls, "w-20")} value={f.manualType} onChange={(e) => setF({ ...f, manualType: e.target.value })} aria-label="Discount type">
+                  <option value="amount">₹</option>
+                  <option value="percent">%</option>
+                </select>
+                <input className={inputCls} type="number" min={0} step="0.5" inputMode="decimal" value={f.manualValue} placeholder="0" onChange={(e) => setF({ ...f, manualValue: e.target.value })} />
+              </div>
+            </Field>
+            <Field label="Extra charges (₹)">
+              <input className={inputCls} type="number" min={0} step="0.5" inputMode="decimal" value={f.extra} placeholder="0" onChange={(e) => setF({ ...f, extra: e.target.value })} />
+            </Field>
+            <Field label="GST">
+              <div className="flex items-center gap-3">
+                <Switch on={f.isGst} onChange={(v) => setF({ ...f, isGst: v })} label="GST invoice" />
+                {f.isGst && <input className={cx(inputCls, "w-24")} type="number" min={0} max={100} step="0.5" inputMode="decimal" value={f.gstPercent} onChange={(e) => setF({ ...f, gstPercent: e.target.value })} aria-label="GST percent" />}
+                {f.isGst && <span className="text-[12px] text-slate-500">%</span>}
+              </div>
+            </Field>
+          </section>
+        )}
+
+        <section className="rounded-2xl bg-slate-50 p-4 text-[13px]">
+          <dl className="space-y-1">
+            <div className="flex justify-between">
+              <dt className="text-slate-500">Subtotal</dt>
+              <dd>{rupee(amountsLocked ? b.subtotal : calc.subtotal)}</dd>
+            </div>
+            {(amountsLocked ? b.discount : calc.discount) > 0 && (
+              <div className="flex justify-between text-red-600">
+                <dt>Discounts{b.couponCode ? ` (incl. ${b.couponCode})` : ""}</dt>
+                <dd>-{rupee(amountsLocked ? b.discount : calc.discount)}</dd>
+              </div>
+            )}
+            {(amountsLocked ? b.extra : calc.extra) > 0 && (
+              <div className="flex justify-between">
+                <dt className="text-slate-500">Extra charges</dt>
+                <dd>{rupee(amountsLocked ? b.extra : calc.extra)}</dd>
+              </div>
+            )}
+            {(amountsLocked ? b.isGst : f.isGst) && (
+              <>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">CGST ({gstSplit(amountsLocked ? b.gstPercent : calc.gstPercent, amountsLocked ? b.gstAmount : calc.gstAmount).rate}%)</dt>
+                  <dd>{rupee(gstSplit(amountsLocked ? b.gstPercent : calc.gstPercent, amountsLocked ? b.gstAmount : calc.gstAmount).cgst)}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">SGST ({gstSplit(amountsLocked ? b.gstPercent : calc.gstPercent, amountsLocked ? b.gstAmount : calc.gstAmount).rate}%)</dt>
+                  <dd>{rupee(gstSplit(amountsLocked ? b.gstPercent : calc.gstPercent, amountsLocked ? b.gstAmount : calc.gstAmount).sgst)}</dd>
+                </div>
+                <div className="flex justify-between font-semibold text-slate-700">
+                  <dt>Total GST ({amountsLocked ? b.gstPercent : calc.gstPercent}%)</dt>
+                  <dd>{rupee(amountsLocked ? b.gstAmount : calc.gstAmount)}</dd>
+                </div>
+              </>
+            )}
+            <div className="flex justify-between border-t border-slate-200 pt-2 text-[16px]">
+              <dt className="font-bold">Invoice total</dt>
+              <dd className="adm-num font-extrabold">
+                {rupee(total)}
+                {total !== b.total && <span className="ml-2 text-[12px] font-semibold text-slate-400 line-through">{rupee(b.total)}</span>}
+              </dd>
+            </div>
+          </dl>
+        </section>
+
+        <section className="space-y-3">
+          <Field label="Paid by" hint={b.status !== "completed" ? "A voided bill's payment can't be changed." : total !== b.total ? "The total changed — check how it was paid." : undefined}>
+            <select className={inputCls} disabled={b.status !== "completed"} value={f.payment} onChange={(e) => setF({ ...f, payment: e.target.value })}>
+              <option value="cash">Cash</option>
+              <option value="upi">UPI / GPay / QR</option>
+              <option value="card">Card</option>
+              <option value="split">Split (two or more)</option>
+            </select>
+          </Field>
+          {(f.payment === "upi" || (split && Number(f.upiAmount) > 0)) && (
+            <Field label="UPI payment came through">
+              <select className={inputCls} disabled={b.status !== "completed"} value={f.upiChannel} onChange={(e) => setF({ ...f, upiChannel: e.target.value as UpiChannel })}>
+                {UPI_CHANNELS.map((c) => (
+                  <option key={c.key} value={c.key}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+          {split && (
+            <div className="space-y-2">
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    ["cashAmount", "Cash"],
+                    ["upiAmount", "UPI"],
+                    ["cardAmount", "Card"],
+                  ] as const
+                ).map(([k, label]) => (
+                  <Field key={k} label={label}>
+                    <input className={inputCls} type="number" min={0} step="0.01" inputMode="decimal" value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
+                  </Field>
+                ))}
+              </div>
+              <p className={cx("text-[12px] font-semibold", splitBad ? "text-red-600" : "text-emerald-700")}>
+                {rupee(sum)} of {rupee(total)}
+                {splitBad ? ` — ${rupee(Math.abs(round2(total - sum)))} ${sum < total ? "short" : "over"}` : " — adds up"}
+              </p>
+            </div>
+          )}
+        </section>
+      </div>
+    </Modal>
+  );
+}
