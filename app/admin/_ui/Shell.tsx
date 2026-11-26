@@ -258,7 +258,7 @@ function Settings({ onClose }: { onClose: () => void }) {
 export default function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const router = useRouter();
-  const { s, role, floor, toasts, dismiss, pending, answer, printNode, sound, setSound } = useAdmin();
+  const { s, role, floor, toasts, dismiss, pending, answer, printNode } = useAdmin();
   const [menu, setMenu] = useState(false);
   const [settings, setSettings] = useState(false);
   const [rail, setRail] = useState(false); // desktop sidebar collapsed to icons
@@ -346,14 +346,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         })}
       </nav>
       <div className="adm-side space-y-1 px-3 py-4" style={{ borderTop: "1px solid var(--line-dark)" }}>
-        <button type="button" onClick={() => setSound(!sound)} title={mini ? (sound ? "Order chime on" : "Order chime off") : undefined} className={cx("adm-link flex h-10 w-full items-center rounded-xl text-[13px] font-semibold", mini ? "justify-center px-0" : "gap-3 px-3")}>
-          <Icon name={sound ? "bell" : "belloff"} size={17} />
-          {!mini && (sound ? "Order chime on" : "Order chime off")}
-        </button>
-        <a href="/" target="_blank" rel="noopener noreferrer" title={mini ? "Guest website" : undefined} className={cx("adm-link flex h-10 items-center rounded-xl text-[13px] font-semibold", mini ? "justify-center px-0" : "gap-3 px-3")}>
-          <Icon name="globe" size={17} />
-          {!mini && "Guest website"}
-        </a>
         {role === "admin" && (
           <button type="button" onClick={() => setSettings(true)} title={mini ? "Settings" : undefined} className={cx("adm-link flex h-10 w-full items-center rounded-xl text-[13px] font-semibold", mini ? "justify-center px-0" : "gap-3 px-3")}>
             <Icon name="sliders" size={17} />
