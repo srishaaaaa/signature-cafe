@@ -304,10 +304,10 @@ export default function AnalyticsPage() {
           ["GST collected", sum.gst],
           ["Net earnings", net],
           ["Completed bills", sum.count],
-          ["Tab bills", sum.tabN],
-          ["Counter bills", sum.counterN],
-          ["Tab revenue", sum.tabRev],
-          ["Counter revenue", sum.counterRev],
+          ["Online bills", sum.tabN],
+          ["Offline bills", sum.counterN],
+          ["Online revenue", sum.tabRev],
+          ["Offline revenue", sum.counterRev],
           ["Items sold", sum.items],
           ["Avg order value", Math.round(sum.aov)],
           ["Discounts given", sum.discount],
@@ -472,14 +472,15 @@ export default function AnalyticsPage() {
             − <b className="text-slate-800">Expenses {rupee(expensesTotal)}</b> = <b className={net >= 0 ? "text-emerald-600" : "text-red-600"}>{rupee(net)}</b>
           </p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <Kpi label="Completed bills" value={sum.count} hint="Tab + counter bills" icon="billing" tone="amber" />
-            <Kpi label="Tab revenue" value={rupee(sum.tabRev)} hint="Guests who ordered from their phone" icon="utensils" tone="sky" />
-            <Kpi label="Counter revenue" value={rupee(sum.counterRev)} hint="Walk-in counter sales" icon="bag" tone="violet" />
+            <Kpi label="Completed bills" value={sum.count} hint="Online + offline bills" icon="billing" tone="amber" />
+            <Kpi label="Online revenue" value={rupee(sum.tabRev)} hint="Customer tabs and online orders" icon="utensils" tone="sky" />
+            <Kpi label="Offline revenue" value={rupee(sum.counterRev)} hint="Walk-in counter sales" icon="bag" tone="violet" />
             <Kpi label="GST collected" value={rupee(sum.gst)} hint={`${sum.gstN} GST invoice${sum.gstN === 1 ? "" : "s"} of ${sum.count}`} icon="percent" tone="amber" />
           </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-            <Kpi label="Tab bills" value={sum.tabN} hint="Customer tabs settled" icon="tables" tone="rose" />
-            <Kpi label="Counter bills" value={sum.counterN} hint="Walk-in bills" icon="bag" tone="sky" />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <Kpi label="Online bills" value={sum.tabN} hint="Customer tabs settled" icon="tables" tone="rose" />
+            <Kpi label="Offline bills" value={sum.counterN} hint="Walk-in bills" icon="bag" tone="sky" />
+            <Kpi label="Online share" value={`${sum.revenue > 0 ? Math.round((sum.tabRev / sum.revenue) * 100) : 0}%`} hint="Of total revenue from online orders" icon="percent" tone="emerald" />
             <Kpi label="Total items sold" value={sum.items} hint="From completed bills" icon="box" tone="violet" />
             <Kpi label="Avg order value" value={rupee(Math.round(sum.aov))} hint="Per completed bill" icon="zap" tone="orange" />
             <Kpi label="Top product" value={sum.top} hint="Most sold item" icon="star" tone="amber" small />

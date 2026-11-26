@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAdmin } from "./Store";
 import { PRINT_FORMAT_OPTIONS } from "./receipt";
-import { Btn, Field, Icon, Modal, Switch, cx, inputCls, type IconName } from "./kit";
+import { Btn, Field, Icon, Modal, cx, inputCls, type IconName } from "./kit";
 import { DEFAULT_THEME, THEME_PRESETS, THEME_SWATCHES, sameTheme, themeCss, type Theme } from "@/lib/theme";
 
 type Nav = { href: string; label: string; icon: IconName; roles: ("admin" | "staff")[]; requiresKot?: boolean; hideWhen?: (s: { walkInsOnly: boolean; kotEnabled: boolean; orderingEnabled: boolean }) => boolean };
@@ -46,40 +46,14 @@ const Sec = ({ title, desc, children }: { title: string; desc?: string; children
     <div className="mt-3 space-y-3">{children}</div>
   </section>
 );
-const Toggle = ({ title, desc, on, onChange }: { title: string; desc: string; on: boolean; onChange: (v: boolean) => void }) => (
-  <div className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
-    <div className="min-w-0">
-      <b className="block text-[13px] text-slate-900">{title}</b>
-      <p className="mt-0.5 text-[12px] leading-snug text-slate-500">{desc}</p>
-    </div>
-    <Switch on={on} onChange={onChange} label={title} />
-  </div>
-);
 
 function Settings({ onClose }: { onClose: () => void }) {
   const { s, act, toast } = useAdmin();
-  const [walkInsOnly, setWalkInsOnly] = useState(s.settings.walkInsOnly);
-  const [orderingEnabled, setOrderingEnabled] = useState(s.settings.orderingEnabled);
-
-  const toggleOrdering = async (v: boolean) => {
-    setOrderingEnabled(v);
-    const r = await act("settings.update", { orderingEnabled: v });
-    if (!r.ok) setOrderingEnabled(!v);
-    else toast({ kind: "ok", title: v ? "Customer ordering is on — guests can order from their phone." : "Customer site is now menu-only." });
-  };
-
-  const toggleWalkIns = async (v: boolean) => {
-    setWalkInsOnly(v);
-    const r = await act("settings.update", { walkInsOnly: v });
-    if (!r.ok) setWalkInsOnly(!v);
-    else toast({ kind: "ok", title: v ? "Customer tab is hidden in Billing." : "Customer tab is showing in Billing." });
-  };
-
   const d = s.settings;
   const [form, setForm] = useState({
     shopName: d.shopName, ownerName: d.ownerName, location: d.location, address: d.address, address2: "",
     whatsapp1: d.whatsapp1, whatsapp2: "", customerCare: d.customerCare, email: d.email, instagram: d.instagram, mapsUrl: d.mapsUrl, logoUrl: d.logoUrl, publicUrl: d.publicUrl,
-    upiId: d.upiId, upiName: d.upiName, upiPhone: d.upiPhone, upiQrMinutes: String(d.upiQrMinutes), tableCount: String(d.tableCount), printFormat: d.printFormat,
+    upiId: d.upiId, upiName: d.upiName, upiPhone: d.upiPhone, upiQrMinutes: String(d.upiQrMinutes), printFormat: d.printFormat,
   });
   const [saving, setSaving] = useState(false);
 
@@ -241,15 +215,6 @@ function Settings({ onClose }: { onClose: () => void }) {
         <Sec title="Printing" desc="The paper the Print button uses straight away, without asking each time.">
           <Field label="Default paper" hint="Thermal bill printers: pick the roll width. Sheet printers: pick the paper size."><select className={inputCls} value={form.printFormat} onChange={(e) => setForm({ ...form, printFormat: e.target.value })}>{PRINT_FORMAT_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}</select></Field>
         </Sec>
-
-        <Sec title="Tables" desc="Each table gets its own QR code, so every order shows which table it came from. The table QR codes are made from these numbers.">
-          <Field label="Number of tables" hint="Tables are numbered 1 to this number. 0 = no tables (one shop QR only)."><input className={inputCls} type="number" min={0} max={200} inputMode="numeric" value={form.tableCount} onChange={set("tableCount")} /></Field>
-        </Sec>
-
-        <section className="divide-y divide-slate-100 rounded-2xl border border-slate-100 bg-white p-4">
-          <Toggle title="Customer ordering" desc="On: guests can scan, order and open a tab from their phone. Off: the site shows the menu card only." on={orderingEnabled} onChange={toggleOrdering} />
-          <Toggle title="Customer tab in Billing" desc="Show the Customer tab option in POS Billing, for billing guests who ordered from their phone. Off: every bill is a counter sale." on={!walkInsOnly} onChange={(v) => toggleWalkIns(!v)} />
-        </section>
       </div>
     </Modal>
   );

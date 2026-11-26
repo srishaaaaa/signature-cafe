@@ -24,44 +24,6 @@ function status(f: FloorTab): { tone: BadgeTone; label: string; bar: string } {
   return { tone: "green", label: "Open", bar: "bg-emerald-500" };
 }
 
-/** The shop's one QR card, two to an A4 page. */
-export function QrSheet({ base, shop }: { base: string; shop: string }) {
-  return (
-    <div className="qr-sheet">
-      {[0, 1].map((i) => (
-        <div className="qr-card" key={i}>
-          <span className="qr-card__brand">{shop}</span>
-          <span className="qr-card__lead">Scan &amp; order</span>
-          <div className="qr-card__qr">
-            <Qr text={base} />
-          </div>
-          <span className="qr-card__cta">Browse the menu and order from your phone</span>
-          <span className="qr-card__url">{base}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/** One QR card per table. Each QR opens the same menu with ?table=N, so every order says where it came from. */
-export function TableQrSheet({ base, shop, count }: { base: string; shop: string; count: number }) {
-  const root = base.replace(/\/+$/, "");
-  const nums = Array.from({ length: count }, (_, i) => i + 1);
-  return (
-    <div className="qr-sheet">
-      {nums.map((n) => (
-        <div className="qr-card" key={n}>
-          <span className="qr-card__brand">{shop}</span>
-          <span className="qr-card__lead">Table {n}</span>
-          <div className="qr-card__qr">
-            <Qr text={`${root}/?table=${n}`} />
-          </div>
-          <span className="qr-card__cta">Scan to order from your table</span>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export default function TabsPage({ focus }: { focus?: string }) {
   const { s, floor, act, confirm, toast, base, now, print } = useAdmin();
@@ -102,16 +64,6 @@ export default function TabsPage({ focus }: { focus?: string }) {
         sub="Every guest's running tab, found by their mobile number."
         right={
           <>
-            <Btn icon="print" onClick={() => print(<QrSheet base={base} shop={s.settings.shopName} />)}>
-              Print QR card
-            </Btn>
-            <Btn icon="qr" onClick={() => {
-              const n = s.settings.tableCount;
-              if (n < 1) return toast({ kind: "info", title: "Set the number of tables first: Settings → Tables." });
-              print(<TableQrSheet base={base} shop={s.settings.shopName} count={n} />);
-            }}>
-              Table QR cards
-            </Btn>
             <Btn kind="red" icon="plus" onClick={() => setStartForm({ name: "", phone: "" })}>
               Start a tab
             </Btn>
