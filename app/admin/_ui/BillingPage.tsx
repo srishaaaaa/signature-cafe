@@ -39,6 +39,10 @@ type Draft = {
   isGst: boolean; gstPct: string; pay: PayMethod; received: string; splitCash: string; splitCard: string; splitUpi: string; upiVia: UpiChannel | ""; linkSent: boolean; lSel: string; lPts: string; addedGifts: string[];
 };
 let DRAFT: Draft | null = null;
+/* One key per bill being rung up. A retry of the same bill reuses it (so the server never saves it twice);
+   it changes once the bill is saved or the cashier clears the screen. */
+const newBillKey = () => (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`).replace(/[^A-Za-z0-9_-]/g, "");
+let BILL_KEY = "";
 
 let seq = 0;
 const blank = (): Line => ({ key: ++seq, productId: null, name: "", price: "", qty: 1 });
@@ -112,6 +116,7 @@ export default function BillingPage({ sessionId }: { sessionId?: string }) {
   const lost = mode === "tab" && sel && !f;
 
   const reset = (keepMode = true) => {
+    BILL_KEY = newBillKey();
     setUpiVia("");
     setLinkSent(false);
     setSel(null);
@@ -251,7 +256,9 @@ export default function BillingPage({ sessionId }: { sessionId?: string }) {
     if (!ready) return;
     const w = via === "wa" ? window.open("about:blank", "_blank") : null;
     setBusy(true);
+    if (!BILL_KEY) BILL_KEY = newBillKey();
     const r = await act<Bill>("bill.create", {
+      clientKey: BILL_KEY,
       source: mode,
       sessionId: f?.session.id,
       customerName: name,

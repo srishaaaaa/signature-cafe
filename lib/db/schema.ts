@@ -184,9 +184,12 @@ export const bills = pgTable(
     /** the member's points just before and just after this bill (null on bills without a member) */
     loyaltyPrev: integer("loyalty_prev"),
     loyaltyBalance: integer("loyalty_balance"),
+    /** Billing's key for this attempt: a retried "Complete" (e.g. after a timeout) finds the bill
+        it already saved instead of making a second one. Null on bills made elsewhere. */
+    clientKey: text("client_key"),
     createdAt: ms("created_at").notNull(),
   },
-  (t) => [uniqueIndex("bills_invoice_uq").on(t.invoiceNo), index("bills_created_idx").on(t.createdAt)],
+  (t) => [uniqueIndex("bills_invoice_uq").on(t.invoiceNo), uniqueIndex("bills_client_key_uq").on(t.clientKey), index("bills_created_idx").on(t.createdAt)],
 );
 
 export const coupons = pgTable(

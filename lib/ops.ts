@@ -781,6 +781,13 @@ export function couponForPage(raw: unknown) {
 
 async function createBill(tx: Tx, a: Args, actor = "admin"): Promise<Bill> {
   const now = Date.now();
+  /* The same Billing attempt sent twice (a slow save that timed out in the browser, then
+     "Complete" pressed again) gets back the bill it already made — never a duplicate. */
+  const clientKey = /^[A-Za-z0-9_-]{8,64}$/.test(str(a.clientKey, 64)) ? str(a.clientKey, 64) : null;
+  if (clientKey) {
+    const already = await first(tx.select().from(bills).where(eq(bills.clientKey, clientKey)));
+    if (already) return already;
+  }
   const source = a.source === "counter" ? "counter" : "tab";
   let s: Session | null = null;
   if (source === "tab") {
@@ -901,6 +908,7 @@ async function createBill(tx: Tx, a: Args, actor = "admin"): Promise<Bill> {
       invoiceNo,
       source,
       sessionId: s?.id ?? null,
+      clientKey,
       customerName: str(a.customerName, 60) || s?.customerName || (source === "counter" ? "Walk-in customer" : ""),
       customerPhone: phone || s?.customerPhone || "",
       items,

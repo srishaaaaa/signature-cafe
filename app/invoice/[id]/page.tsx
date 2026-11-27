@@ -5,6 +5,7 @@ import { getConfig } from "@/lib/loyalty/server";
 import { db } from "@/lib/db";
 import { TZ, gstSplit, inr2 as inr, loyaltySummary, numberToWords, payLabel, payParts } from "@/lib/money";
 import { InvoiceActions } from "./InvoiceActions";
+import { isAuthed } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Invoice", robots: { index: false } };
@@ -15,6 +16,8 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
   const { id } = await params;
   const isEmbed = (await searchParams).embed === "true";
   const found = await billForInvoice(id);
+  /* Shop staff see the Back / WhatsApp / Copy / Print bar; a customer opening the link from WhatsApp sees only the invoice. */
+  const staff = await isAuthed();
   const showLoyalty = (await getConfig(db)).display.receiptSummary; // the owner can switch the loyalty box off in Loyalty settings
 
   if (!found) {
@@ -22,9 +25,11 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
       <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 p-6 text-center text-zinc-800">
         <h1 className="mb-1 text-base font-semibold text-zinc-900">Invoice Not Found</h1>
         <p className="mb-5 max-w-sm text-xs text-zinc-800">The requested invoice could not be found.</p>
-        <Link href="/admin/orders" className="rounded-md bg-zinc-900 px-4 py-2 text-xs font-medium text-white hover:bg-zinc-800">
-          ← Back to orders
-        </Link>
+        {staff && (
+          <Link href="/admin/orders" className="rounded-md bg-zinc-900 px-4 py-2 text-xs font-medium text-white hover:bg-zinc-800">
+            ← Back to orders
+          </Link>
+        )}
       </div>
     );
   }
@@ -44,7 +49,7 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
         }
       `}</style>
 
-      {!isEmbed && (
+      {!isEmbed && staff && (
         <div className="mb-4 w-full max-w-[760px] print:hidden">
           <InvoiceActions invoiceNo={b.invoiceNo} shop={shop} customerName={b.customerName} customerPhone={b.customerPhone} total={b.total} />
         </div>

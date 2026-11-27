@@ -225,6 +225,13 @@
       "when": 1791502500000,
       "tag": "0031_hide_customer_tab",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791502600000,
+      "tag": "0032_bill_client_key",
+      "breakpoints": true
     }
   ]
 }
