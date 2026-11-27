@@ -2,7 +2,7 @@ import { bigint, boolean, index, integer, jsonb, numeric, pgTable, text, uniqueI
 import { sql } from "drizzle-orm";
 import type { Audit, CampaignType, LedgerType, LoyaltyStatus, Segment, VoucherSource, VoucherStatus } from "../loyalty/types";
 import type { LoyaltyConfig, RewardKind, TierKey } from "../loyalty/config";
-import type { BillSource, UpiChannel, CouponSource, DiscountType, IngredientUnit, OrderItem, OrderSource, OrderStatus, PayMethod, SessionStatus, StockMoveType } from "../types";
+import type { BillSource, UpiChannel, CouponSource, DiscountType, IngredientUnit, OrderItem, OrderSource, OrderType, OrderStatus, PayMethod, SessionStatus, StockMoveType } from "../types";
 
 /* One database table per type in lib/types.ts. Ids stay the app's own short text ids and
    timestamps stay epoch milliseconds, so rows map 1:1 onto the shapes the UI
@@ -56,6 +56,9 @@ export const settings = pgTable("settings", {
   themeAccent: text("theme_accent").notNull().default("#9a7420"),
   themeDark: text("theme_dark").notNull().default("#0d0d0d"),
   themeLight: text("theme_light").notNull().default("#f6f1e2"),
+  /** Takeaway packaging: the amount Billing fills in, charged per bill or per item. */
+  packagingCharge: money("packaging_charge").notNull().default(0),
+  packagingPer: text("packaging_per").$type<"bill" | "item">().notNull().default("bill"),
 });
 
 /** Single row (id = 1): the change counter the admin panel polls, and the order-number sequence. */
@@ -159,6 +162,9 @@ export const bills = pgTable(
     manualDiscount: money("manual_discount").notNull().default(0),
     discount: money("discount").notNull().default(0),
     extra: money("extra").notNull().default(0),
+    /** dine-in or takeaway; a takeaway bill may carry a packaging charge (taxed like any other charge) */
+    orderType: text("order_type").$type<OrderType>().notNull().default("dine_in"),
+    packaging: money("packaging").notNull().default(0),
     isGst: boolean("is_gst").notNull().default(false),
     gstPercent: money("gst_percent").notNull().default(0),
     taxableAmount: money("taxable_amount").notNull().default(0),

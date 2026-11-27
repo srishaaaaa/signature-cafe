@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { UPI_CHANNELS, type Bill, type Coupon, type OrdersPageData, type UpiChannel } from "@/lib/types";
+import { ORDER_TYPE_LABEL, UPI_CHANNELS, type Bill, type Coupon, type OrdersPageData, type UpiChannel } from "@/lib/types";
 import { computeBill, gstSplit, payLabel, payParts, round2, rupee, shopToday } from "@/lib/money";
 import { rangeOf, type Period } from "@/lib/analytics";
 import { useAdmin } from "./Store";
@@ -136,8 +136,8 @@ export default function OrdersPage() {
     }
   };
   const exportRows = (list: Bill[]): (string | number)[][] => [
-    ["Invoice", "Type", "Customer", "Mobile", "Items", "Subtotal", "Coupon", "Coupon discount", "Manual discount", "Extra", "Bill type", "GST %", "Taxable amount", "CGST", "SGST", "GST amount", "Total", "Payment", "UPI came through", "Cash", "UPI", "Card", "Status", "Date", "Time", "Reward", "Reward discount", "Points redeemed", "Points discount", "Points earned"],
-    ...list.map((b) => [b.invoiceNo, b.source, b.customerName, b.customerPhone, b.itemCount, b.subtotal, b.couponCode ?? "", b.couponDiscount, b.manualDiscount, b.extra, b.isGst ? "GST" : "Non-GST", b.gstPercent, b.taxableAmount, gstSplit(b.gstPercent, b.gstAmount).cgst, gstSplit(b.gstPercent, b.gstAmount).sgst, b.gstAmount, b.total, b.payment, UPI_CHANNELS.find((c) => c.key === b.upiChannel)?.label ?? "", b.cashAmount, b.upiAmount, b.cardAmount, b.status, fmtDate(b.createdAt), fmtTime(b.createdAt), b.rewardName ?? "", b.rewardDiscount, b.pointsRedeemed, b.pointsDiscount, b.pointsEarned]),
+    ["Invoice", "Type", "Customer", "Mobile", "Items", "Subtotal", "Coupon", "Coupon discount", "Manual discount", "Extra", "Order type", "Packaging", "Bill type", "GST %", "Taxable amount", "CGST", "SGST", "GST amount", "Total", "Payment", "UPI came through", "Cash", "UPI", "Card", "Status", "Date", "Time", "Reward", "Reward discount", "Points redeemed", "Points discount", "Points earned"],
+    ...list.map((b) => [b.invoiceNo, b.source, b.customerName, b.customerPhone, b.itemCount, b.subtotal, b.couponCode ?? "", b.couponDiscount, b.manualDiscount, b.extra, ORDER_TYPE_LABEL[b.orderType] ?? "Dine-in", b.packaging, b.isGst ? "GST" : "Non-GST", b.gstPercent, b.taxableAmount, gstSplit(b.gstPercent, b.gstAmount).cgst, gstSplit(b.gstPercent, b.gstAmount).sgst, b.gstAmount, b.total, b.payment, UPI_CHANNELS.find((c) => c.key === b.upiChannel)?.label ?? "", b.cashAmount, b.upiAmount, b.cardAmount, b.status, fmtDate(b.createdAt), fmtTime(b.createdAt), b.rewardName ?? "", b.rewardDiscount, b.pointsRedeemed, b.pointsDiscount, b.pointsEarned]),
   ];
 
   /* the same five buttons on every bill, in the table and on the phone cards */
@@ -302,6 +302,7 @@ export default function OrdersPage() {
             </div>
             <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
               {b.source === "tab" ? <Badge tone="orange">Customer tab</Badge> : <Badge tone="sky">Counter</Badge>}
+              {b.orderType === "takeaway" && <Badge tone="amber">Takeaway</Badge>}
               {b.status === "completed" ? <Badge tone="green">Completed</Badge> : <Badge tone="slate">Void</Badge>}
               <span className="text-[12px] text-slate-600">{payLabel(b)}</span>
             </div>
@@ -336,7 +337,9 @@ export default function OrdersPage() {
                     </td>
                     <td className={cx(td, "font-semibold text-slate-800")}>{b.customerName || "—"}</td>
                     <td className={cx(td, "adm-num text-slate-600")}>{b.customerPhone || <span className="text-slate-400">—</span>}</td>
-                    <td className={td}>{b.source === "tab" ? <Badge tone="orange">Customer tab</Badge> : <Badge tone="sky">Counter</Badge>}</td>
+                    <td className={td}>
+                      <span className="inline-flex flex-wrap gap-1">{b.source === "tab" ? <Badge tone="orange">Customer tab</Badge> : <Badge tone="sky">Counter</Badge>}{b.orderType === "takeaway" && <Badge tone="amber">Takeaway</Badge>}</span>
+                    </td>
                     <td className={cx(td, "font-bold text-slate-900")}>{rupee(b.total)}</td>
                     <td className={cx(td, "text-slate-600")}>{payLabel(b)}</td>
                     <td className={cx(td, "text-slate-600")}>{fmtDate(b.createdAt)}</td>
@@ -437,7 +440,7 @@ export default function OrdersPage() {
                 <span className="block text-slate-500">{bill.customerPhone || "no phone"}</span>
               </p>
               <p className="text-right">
-                <span className="block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">{bill.source === "tab" ? "Customer tab" : "Counter"}</span>
+                <span className="block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">{bill.source === "tab" ? "Customer tab" : "Counter"} · {ORDER_TYPE_LABEL[bill.orderType] ?? "Dine-in"}</span>
                 <b>{fmtDateTime(bill.createdAt)}</b>
                 <span className="block">{bill.status === "completed" ? <Badge tone="green">Completed</Badge> : <Badge tone="slate">Void</Badge>}</span>
               </p>
@@ -493,6 +496,12 @@ export default function OrdersPage() {
                 <div className="flex justify-between">
                   <dt className="text-slate-500">Extra charges</dt>
                   <dd>{rupee(bill.extra)}</dd>
+                </div>
+              )}
+              {bill.packaging > 0 && (
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Packaging charges</dt>
+                  <dd>{rupee(bill.packaging)}</dd>
                 </div>
               )}
               {bill.isGst ? (
@@ -578,7 +587,7 @@ function EditBill({ b, admin, onClose, onSaved }: { b: Bill; admin: boolean; onC
   // the new totals, worked out the way the server will
   const coupon: Coupon | null = b.couponCode ? { id: "", audience: "all", code: b.couponCode, percent: b.couponPercent, minOrder: 0, expiresAt: null, limit: null, used: 0, active: true, restricted: false, phones: [], sent: 0, createdAt: 0 } : null;
   const clean = items.filter((i) => i.name.trim() && Number(i.price) >= 0 && i.qty >= 1).map((i) => ({ productId: i.productId, name: i.name.trim(), price: Number(i.price) || 0, qty: i.qty }));
-  const calc = computeBill({ items: clean, coupon, manualType: f.manualType === "percent" ? "percent" : "amount", manualValue: Number(f.manualValue) || 0, extra: Number(f.extra) || 0, gst: f.isGst, gstPercent: Number(f.gstPercent) || 0 });
+  const calc = computeBill({ items: clean, coupon, manualType: f.manualType === "percent" ? "percent" : "amount", manualValue: Number(f.manualValue) || 0, extra: Number(f.extra) || 0, packaging: b.packaging, gst: f.isGst, gstPercent: Number(f.gstPercent) || 0 });
   const total = amountsLocked ? b.total : calc.total;
 
   const split = f.payment === "split";

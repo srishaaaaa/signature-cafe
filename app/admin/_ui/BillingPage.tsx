@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { UPI_CHANNELS, type Bill, type UpiChannel, type Coupon, type DiscountType, type OrderItem, type PayMethod } from "@/lib/types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ORDER_TYPE_LABEL, UPI_CHANNELS, type Bill, type UpiChannel, type Coupon, type DiscountType, type OrderItem, type OrderType, type PayMethod } from "@/lib/types";
 import { checkCoupon, computeBill, couponStatus, mergeItems, round2, rupee, shopToday } from "@/lib/money";
 import { useAdmin, whoIs, type FloorTab } from "./Store";
 import Catalog from "./Catalog";
@@ -35,14 +35,13 @@ const DEFAULT_GST = "18";
 /** The bill being typed. It lives outside the component, so going to another page and coming back to Billing finds
     everything as it was — it is only cleared when the bill is saved (or the cashier clears it). */
 type Draft = {
-  mode: "tab" | "counter"; sel: string | null; lines: Line[]; name: string; phone: string; sig: string; coupon: string; mType: DiscountType; mVal: string; extra: string;
+  mode: "tab" | "counter"; sel: string | null; lines: Line[]; name: string; phone: string; sig: string; coupon: string; mType: DiscountType; mVal: string; extra: string; orderType: OrderType; pack: string | null; billKey: string;
   isGst: boolean; gstPct: string; pay: PayMethod; received: string; splitCash: string; splitCard: string; splitUpi: string; upiVia: UpiChannel | ""; linkSent: boolean; lSel: string; lPts: string; addedGifts: string[];
 };
 let DRAFT: Draft | null = null;
 /* One key per bill being rung up. A retry of the same bill reuses it (so the server never saves it twice);
    it changes once the bill is saved or the cashier clears the screen. */
 const newBillKey = () => (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`).replace(/[^A-Za-z0-9_-]/g, "");
-let BILL_KEY = "";
 
 let seq = 0;
 const blank = (): Line => ({ key: ++seq, productId: null, name: "", price: "", qty: 1 });
@@ -76,6 +75,11 @@ export default function BillingPage({ sessionId }: { sessionId?: string }) {
   const [mType, setMType] = useState<DiscountType>(d?.mType ?? "amount");
   const [mVal, setMVal] = useState(d?.mVal ?? "");
   const [extra, setExtra] = useState(d?.extra ?? "");
+  /* dine-in or takeaway; takeaway adds packaging — the amount from Settings unless staff type their own (pack !== null) */
+  const [orderType, setOrderType] = useState<OrderType>(d?.orderType ?? "dine_in");
+  const [pack, setPack] = useState<string | null>(d?.pack ?? null);
+  const [firstKey] = useState(() => d?.billKey || newBillKey());
+  const billKey = useRef(firstKey);
   const [isGst, setIsGst] = useState(d?.isGst ?? false);
   const [gstPct, setGstPct] = useState(d?.gstPct ?? DEFAULT_GST);
   const [pay, setPay] = useState<PayMethod>(d?.pay ?? "cash");
@@ -104,8 +108,8 @@ export default function BillingPage({ sessionId }: { sessionId?: string }) {
 
   // remember the bill as it is typed, so leaving this page and coming back doesn't lose it
   useEffect(() => {
-    DRAFT = { mode, sel, lines, name, phone, sig, coupon, mType, mVal, extra, isGst, gstPct, pay, received, splitCash, splitCard, splitUpi, upiVia, linkSent, lSel, lPts, addedGifts };
-  }, [mode, sel, lines, name, phone, sig, coupon, mType, mVal, extra, isGst, gstPct, pay, received, splitCash, splitCard, splitUpi, upiVia, linkSent, lSel, lPts, addedGifts]);
+    DRAFT = { billKey: billKey.current, mode, sel, lines, name, phone, sig, coupon, mType, mVal, extra, orderType, pack, isGst, gstPct, pay, received, splitCash, splitCard, splitUpi, upiVia, linkSent, lSel, lPts, addedGifts };
+  }, [mode, sel, lines, name, phone, sig, coupon, mType, mVal, extra, orderType, pack, isGst, gstPct, pay, received, splitCash, splitCard, splitUpi, upiVia, linkSent, lSel, lPts, addedGifts]);
 
   /* a customer whose birthday is already saved shows it, so staff only fill it in when it is new */
   const savedDob = useMemo(() => s.birthdays.find((b) => b.phone === phone)?.dob ?? "", [s.birthdays, phone]);
@@ -116,7 +120,7 @@ export default function BillingPage({ sessionId }: { sessionId?: string }) {
   const lost = mode === "tab" && sel && !f;
 
   const reset = (keepMode = true) => {
-    BILL_KEY = newBillKey();
+    billKey.current = newBillKey();
     setUpiVia("");
     setLinkSent(false);
     setSel(null);
@@ -129,6 +133,8 @@ export default function BillingPage({ sessionId }: { sessionId?: string }) {
     setMType("amount");
     setMVal("");
     setExtra("");
+    setOrderType("dine_in");
+    setPack(null);
     setIsGst(false);
     setGstPct(DEFAULT_GST);
     setPay("cash");
@@ -177,7 +183,10 @@ export default function BillingPage({ sessionId }: { sessionId?: string }) {
     .filter((l) => l.name.trim() || Number(l.price) > 0)
     .map((l) => ({ productId: l.productId, name: l.name.trim(), price: Math.max(0, Number(l.price) || 0), qty: l.qty }));
   const cp = s.coupons.find((c) => c.code === coupon) ?? null;
-  const billIn = { items: paidItems, coupon: cp, manualType: mType, manualValue: Number(mVal) || 0, extra: Number(extra) || 0, gst: isGst, gstPercent: Number(gstPct) || 0, phone, member };
+  const paidQty = paidItems.reduce((n, i) => n + i.qty, 0);
+  const packAuto = round2(paidQty ? (s.settings.packagingPer === "item" ? s.settings.packagingCharge * paidQty : s.settings.packagingCharge) : 0);
+  const packAmt = orderType === "takeaway" ? Math.max(0, pack === null ? packAuto : Number(pack) || 0) : 0;
+  const billIn = { items: paidItems, coupon: cp, manualType: mType, manualValue: Number(mVal) || 0, extra: Number(extra) || 0, packaging: packAmt, gst: isGst, gstPercent: Number(gstPct) || 0, phone, member };
   const base = computeBill(billIn);
   /* Free gifts: from the shop's bill offers (anyone) and the reward the customer chose. A gift is its own ₹0 line. */
   const rewardGift = selectedGift(loyal.lk, lSel);
@@ -256,9 +265,8 @@ export default function BillingPage({ sessionId }: { sessionId?: string }) {
     if (!ready) return;
     const w = via === "wa" ? window.open("about:blank", "_blank") : null;
     setBusy(true);
-    if (!BILL_KEY) BILL_KEY = newBillKey();
     const r = await act<Bill>("bill.create", {
-      clientKey: BILL_KEY,
+      clientKey: billKey.current,
       source: mode,
       sessionId: f?.session.id,
       customerName: name,
@@ -268,6 +276,8 @@ export default function BillingPage({ sessionId }: { sessionId?: string }) {
       manualType: mType,
       manualValue: mVal,
       extra,
+      orderType,
+      packaging: packAmt,
       isGst,
       gstPercent: gstPct,
       payment: pay,
@@ -489,6 +499,19 @@ export default function BillingPage({ sessionId }: { sessionId?: string }) {
         {/* ================= right: summary ================= */}
         <aside className="min-w-0 xl:sticky xl:top-6 xl:self-start">
           <div className={cx(box, "space-y-4")}>
+            <div className="grid grid-cols-2 rounded-full border border-slate-200 bg-white p-1" role="group" aria-label="Order type">
+              {(["dine_in", "takeaway"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  aria-pressed={orderType === t}
+                  onClick={() => setOrderType(t)}
+                  className={cx("h-10 rounded-full text-[12.5px] font-extrabold uppercase tracking-wide transition", orderType === t ? "bg-slate-800 text-white shadow" : "text-slate-600 hover:text-slate-900")}
+                >
+                  {ORDER_TYPE_LABEL[t]}
+                </button>
+              ))}
+            </div>
             <dl className="divide-y divide-slate-100 rounded-2xl border border-slate-100 bg-slate-50/70 px-4 text-[12px]">
               <div className="flex items-center justify-between py-3">
                 <dt className="font-bold uppercase tracking-[0.12em] text-slate-400">Source</dt>
@@ -629,6 +652,17 @@ export default function BillingPage({ sessionId }: { sessionId?: string }) {
                   <input type="number" min={0} inputMode="decimal" placeholder="0" className="h-10 w-24 rounded-lg border border-slate-300 px-3 text-right text-[14px] outline-none focus:border-slate-400" value={extra} onChange={(e) => setExtra(e.target.value)} aria-label="Extra charges" />
                 </dd>
               </div>
+              {orderType === "takeaway" && (
+                <div className="flex items-center justify-between">
+                  <dt className="text-slate-600">
+                    Packaging charges
+                    {s.settings.packagingPer === "item" && s.settings.packagingCharge > 0 && pack === null && paidQty > 0 && <span className="block text-[11px] text-slate-400">{rupee(s.settings.packagingCharge)} × {paidQty} items</span>}
+                  </dt>
+                  <dd>
+                    <input type="number" min={0} inputMode="decimal" placeholder="0" className="h-10 w-24 rounded-lg border border-slate-300 px-3 text-right text-[14px] outline-none focus:border-slate-400" value={pack ?? (packAuto ? String(packAuto) : "")} onChange={(e) => setPack(e.target.value)} aria-label="Packaging charges" />
+                  </dd>
+                </div>
+              )}
             </dl>
 
             <div className="space-y-3 border-t border-dashed border-slate-200 pt-4">

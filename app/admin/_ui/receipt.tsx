@@ -1,4 +1,4 @@
-import type { Bill, ShopDetails } from "@/lib/types";
+import { ORDER_TYPE_LABEL, type Bill, type ShopDetails } from "@/lib/types";
 import { TZ, gstSplit, inr2 as inr, loyaltySummary, numberToWords, payLabel, payParts, rupee } from "@/lib/money";
 import { fmtDateTime } from "./kit";
 
@@ -11,7 +11,7 @@ export function billText(b: Bill, shop: string, publicUrl = "") {
     `*${shop}*`,
     `Invoice: ${b.invoiceNo}`,
     `Date: ${fmtDateTime(b.createdAt)}`,
-    b.source === "tab" ? "Order from phone" : "Counter bill",
+    `${b.source === "tab" ? "Order from phone" : "Counter bill"} · ${ORDER_TYPE_LABEL[b.orderType] ?? "Dine-in"}`,
     b.customerName ? `Customer: ${b.customerName}` : "",
     "------------------------------",
     ...b.items.map((i) => (i.free ? `${i.qty} × ${i.name} — FREE GIFT ₹0` : `${i.qty} × ${i.name} — ${rupee(i.price * i.qty)}`)),
@@ -22,6 +22,7 @@ export function billText(b: Bill, shop: string, publicUrl = "") {
     b.rewardDiscount ? `Reward ${b.rewardName ?? ""}: -${rupee(b.rewardDiscount)}` : "",
     b.pointsDiscount ? `Loyalty points (${b.pointsRedeemed} pts): -${rupee(b.pointsDiscount)}` : "",
     b.extra ? `Extra charges: ${rupee(b.extra)}` : "",
+    b.packaging ? `Packaging charges: ${rupee(b.packaging)}` : "",
     b.isGst ? `Taxable amount: ${rupee(b.taxableAmount)}` : "",
     b.isGst ? `CGST (${gstSplit(b.gstPercent, b.gstAmount).rate}%): ${rupee(gstSplit(b.gstPercent, b.gstAmount).cgst)}` : "",
     b.isGst ? `SGST (${gstSplit(b.gstPercent, b.gstAmount).rate}%): ${rupee(gstSplit(b.gstPercent, b.gstAmount).sgst)}` : "",
@@ -145,6 +146,10 @@ function Sheet({ b, shop, logo, details, size }: { b: Bill; shop: string; logo?:
               <dt>Channel:</dt>
               <dd>{b.source === "tab" ? "ORDER FROM PHONE" : "COUNTER"}</dd>
             </div>
+            <div>
+              <dt>Order:</dt>
+              <dd>{(ORDER_TYPE_LABEL[b.orderType] ?? "Dine-in").toUpperCase()}</dd>
+            </div>
           </dl>
         </div>
       </header>
@@ -253,6 +258,12 @@ function Sheet({ b, shop, logo, details, size }: { b: Bill; shop: string; logo?:
               <dd>₹{inr(b.extra)}</dd>
             </div>
           )}
+          {b.packaging > 0 && (
+            <div className={b.extra > 0 ? undefined : "inv__sep"}>
+              <dt>Packaging charges</dt>
+              <dd>₹{inr(b.packaging)}</dd>
+            </div>
+          )}
           {b.isGst && (
             <>
               <div className="inv__sep">
@@ -330,7 +341,7 @@ function Thermal({ b, shop, logo, lines, roll }: { b: Bill; shop: string; logo?:
       <div className="row">
         <span>{fmtDateTime(b.createdAt)}</span>
       </div>
-      <div>{b.source === "tab" ? "Customer tab" : "Counter bill"}</div>
+      <div>{b.source === "tab" ? "Customer tab" : "Counter bill"} · {ORDER_TYPE_LABEL[b.orderType] ?? "Dine-in"}</div>
       {b.customerName && <div>{b.customerName}{b.customerPhone ? ` · ${b.customerPhone}` : ""}</div>}
       <hr />
       {b.items.map((i, k) => (
@@ -379,6 +390,12 @@ function Thermal({ b, shop, logo, lines, roll }: { b: Bill; shop: string; logo?:
         <div className="row">
           <span>Extra charges</span>
           <span>{rupee(b.extra)}</span>
+        </div>
+      )}
+      {b.packaging > 0 && (
+        <div className="row">
+          <span>Packaging charges</span>
+          <span>{rupee(b.packaging)}</span>
         </div>
       )}
       {b.isGst && (

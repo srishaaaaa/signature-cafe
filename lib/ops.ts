@@ -9,7 +9,7 @@ import { batches, bills, coupons, expenseCategories, expenses, ingredients, meta
 import * as L from "./loyalty/server";
 import { pointsPerUnit } from "./loyalty/engine";
 import type { LoyaltyConfig } from "./loyalty/config";
-import { INGREDIENT_UNITS, UPI_CHANNELS, type AdminState, type Coupon, type UpiChannel, Bill, Ingredient, IngredientUnit, StockLedger, OrdersPageData, MenuItem, Order, OrderItem, OrderStatus, PayMethod, Product, PublicUser, Recipe, RecipeItem, Session, StaffUser, StockMoveType, TabClose, TabView, ShopDetails, BirthdayConfig } from "./types";
+import { INGREDIENT_UNITS, UPI_CHANNELS, type AdminState, type Coupon, type UpiChannel, Bill, Ingredient, IngredientUnit, StockLedger, OrdersPageData, MenuItem, Order, OrderItem, OrderStatus, PayMethod, Product, PublicUser, Recipe, RecipeItem, Session, StaffUser, StockMoveType, TabClose, TabView, ShopDetails, BirthdayConfig, OrderType } from "./types";
 
 /* Every read/write the app makes, with validation. Route handlers are thin wrappers.
    Writes run inside store.mutate(), which serializes them and rolls back on error. */
@@ -446,6 +446,8 @@ export async function adminState(): Promise<AdminState> {
       tableCount: st[0]?.tableCount ?? 0,
       printFormat: st[0]?.printFormat ?? "thermal3",
       theme: cleanTheme({ accent: st[0]?.themeAccent, dark: st[0]?.themeDark, light: st[0]?.themeLight }),
+      packagingCharge: st[0]?.packagingCharge ?? 0,
+      packagingPer: st[0]?.packagingPer === "item" ? "item" : "bill",
     },
     products: prods.map((p) => ({ ...p, image: imgLink(p.id, p.updatedAt, p.image) })),
     sessions: sess,
@@ -830,7 +832,9 @@ async function createBill(tx: Tx, a: Args, actor = "admin"): Promise<Bill> {
   const phone = mobile(a.customerPhone);
   if (phone === null) throw new ApiError("Customer mobile should be a 10-digit number.");
   const billPhone = phone || s?.customerPhone;
-  const billInput = { items, coupon, manualType, manualValue, extra: num(a.extra) || 0, gst: isGst, gstPercent: isGst ? gstRaw : 0, phone: billPhone, member: coupon && coupon.audience !== "all" ? await L.isMember(tx, billPhone) : false } as const;
+  const orderType: OrderType = a.orderType === "takeaway" ? "takeaway" : "dine_in";
+  const packaging = orderType === "takeaway" ? Math.min(100000, Math.max(0, round2(num(a.packaging) || 0))) : 0;
+  const billInput = { items, coupon, manualType, manualValue, extra: num(a.extra) || 0, packaging, gst: isGst, gstPercent: isGst ? gstRaw : 0, phone: billPhone, member: coupon && coupon.audience !== "all" ? await L.isMember(tx, billPhone) : false } as const;
   const base = computeBill(billInput);
   if (coupon && base.couponOk && !base.couponOk.ok) throw new ApiError(`Coupon ${coupon.code}: ${base.couponOk.reason}.`);
   // loyalty points / reward asked for at the till — checked against the database, never the browser's numbers
@@ -923,6 +927,8 @@ async function createBill(tx: Tx, a: Args, actor = "admin"): Promise<Bill> {
       manualDiscount: calc.manualDiscount,
       discount: calc.discount,
       extra: calc.extra,
+      orderType,
+      packaging: calc.packaging,
       isGst,
       gstPercent: calc.gstPercent,
       taxableAmount: calc.taxable,
@@ -1085,7 +1091,7 @@ export function billEditPatch(b: Bill, a: Args) {
       if (loyaltyLocked) throw new ApiError("This bill earned or used loyalty points, so its items and amounts can't be edited. Void it and bill again instead.");
       // the coupon on the bill stays, at the same percent, on the new subtotal
       const coupon: Coupon | null = b.couponCode ? { id: "", audience: "all", code: b.couponCode, percent: b.couponPercent, minOrder: 0, expiresAt: null, limit: null, used: 0, active: true, restricted: false, phones: [], sent: 0, createdAt: 0 } : null;
-      const c = computeBill({ items, coupon, manualType, manualValue, extra, gst: isGst, gstPercent: isGst ? gstRaw : 0 });
+      const c = computeBill({ items, coupon, manualType, manualValue, extra, packaging: b.packaging, gst: isGst, gstPercent: isGst ? gstRaw : 0 });
       Object.assign(patch, {
         items,
         itemCount: c.itemCount,
@@ -1225,6 +1231,12 @@ export async function runOp(tx: Tx, op: string, a: Args, role: string): Promise<
           patch.themeDark = String(t.dark).toLowerCase();
           patch.themeLight = String(t.light).toLowerCase();
         }
+        if (a.packagingCharge !== undefined) {
+          const v = num(a.packagingCharge);
+          if (!(v >= 0 && v <= 10000)) throw new ApiError("Packaging charge should be between ₹0 and ₹10,000.");
+          patch.packagingCharge = round2(v);
+        }
+        if (a.packagingPer !== undefined) patch.packagingPer = a.packagingPer === "item" ? "item" : "bill";
         if (a.printFormat !== undefined) {
           if (!["thermal3", "thermal2", "A3", "A4", "A5"].includes(String(a.printFormat))) throw new ApiError("Choose a valid paper size.");
           patch.printFormat = String(a.printFormat);

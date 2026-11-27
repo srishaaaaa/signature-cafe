@@ -5,6 +5,7 @@ import { getConfig } from "@/lib/loyalty/server";
 import { db } from "@/lib/db";
 import { TZ, gstSplit, inr2 as inr, loyaltySummary, numberToWords, payLabel, payParts } from "@/lib/money";
 import { InvoiceActions } from "./InvoiceActions";
+import { ORDER_TYPE_LABEL } from "@/lib/types";
 import { isAuthed } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -100,7 +101,7 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
               </div>
               <div>
                 <span className="text-zinc-800">Channel: </span>
-                <span className="text-zinc-800 uppercase">{b.source === "tab" ? "Order from phone" : "Counter"}</span>
+                <span className="text-zinc-800 uppercase">{b.source === "tab" ? "Order from phone" : "Counter"} · {ORDER_TYPE_LABEL[b.orderType] ?? "Dine-in"}</span>
               </div>
             </div>
           </div>
@@ -216,6 +217,12 @@ export default async function InvoicePage({ params, searchParams }: { params: Pr
               <div className="flex justify-between border-t border-dashed border-zinc-200 pt-1 text-zinc-800">
                 <span>Extra charges</span>
                 <span className="font-mono text-zinc-800">₹{inr(b.extra)}</span>
+              </div>
+            )}
+            {b.packaging > 0 && (
+              <div className={`flex justify-between text-zinc-800 ${b.extra > 0 ? "" : "border-t border-dashed border-zinc-200 pt-1"}`}>
+                <span>Packaging charges</span>
+                <span className="font-mono text-zinc-800">₹{inr(b.packaging)}</span>
               </div>
             )}
             {b.isGst && (

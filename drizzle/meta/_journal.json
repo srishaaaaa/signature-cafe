@@ -232,6 +232,13 @@
       "when": 1791502600000,
       "tag": "0032_bill_client_key",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1791502700000,
+      "tag": "0033_takeaway_packaging",
+      "breakpoints": true
     }
   ]
 }

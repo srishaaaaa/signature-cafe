@@ -53,7 +53,7 @@ function Settings({ onClose }: { onClose: () => void }) {
   const [form, setForm] = useState({
     shopName: d.shopName, ownerName: d.ownerName, location: d.location, address: d.address, address2: "",
     whatsapp1: d.whatsapp1, whatsapp2: "", customerCare: d.customerCare, email: d.email, instagram: d.instagram, mapsUrl: d.mapsUrl, logoUrl: d.logoUrl, publicUrl: d.publicUrl,
-    upiId: d.upiId, upiName: d.upiName, upiPhone: d.upiPhone, upiQrMinutes: String(d.upiQrMinutes), printFormat: d.printFormat,
+    upiId: d.upiId, upiName: d.upiName, upiPhone: d.upiPhone, upiQrMinutes: String(d.upiQrMinutes), printFormat: d.printFormat, packagingCharge: String(d.packagingCharge || ""), packagingPer: d.packagingPer,
   });
   const [saving, setSaving] = useState(false);
 
@@ -209,6 +209,13 @@ function Settings({ onClose }: { onClose: () => void }) {
             <Field label="Name shown in the UPI app" hint="Blank uses the shop name"><input className={inputCls} value={form.upiName} maxLength={60} onChange={set("upiName")} /></Field>
             <Field label="GPay / PhonePe number (optional)" hint="10 digits, shown beside the UPI ID"><input className={inputCls} inputMode="numeric" value={form.upiPhone} maxLength={14} onChange={set("upiPhone")} placeholder="98765 43210" /></Field>
             <Field label="Change the QR every (minutes)" hint="A fresh QR replaces the old one"><input className={inputCls} type="number" min={1} max={30} inputMode="numeric" value={form.upiQrMinutes} onChange={set("upiQrMinutes")} /></Field>
+          </div>
+        </Sec>
+
+        <Sec title="Takeaway packaging" desc="When a bill is marked Takeaway in Billing, this packaging charge is added. Staff can still change it on a bill.">
+          <div className={two}>
+            <Field label="Packaging charge (₹)" hint="0 = no packaging charge"><input className={inputCls} type="number" min={0} step="0.5" inputMode="decimal" value={form.packagingCharge} onChange={set("packagingCharge")} placeholder="0" /></Field>
+            <Field label="Charged"><select className={inputCls} value={form.packagingPer} onChange={(e) => setForm({ ...form, packagingPer: e.target.value === "item" ? "item" : "bill" })}><option value="bill">Once per bill</option><option value="item">Per item</option></select></Field>
           </div>
         </Sec>
 

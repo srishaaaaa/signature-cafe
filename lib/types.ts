@@ -98,6 +98,10 @@ export type UpiChannel = (typeof UPI_CHANNELS)[number]["key"];
 /** Who applied the coupon on a bill: the guest from their phone, or staff at billing. */
 export type CouponSource = "guest" | "staff";
 
+/** Dine-in or takeaway — chosen in Billing; takeaway can add a packaging charge. */
+export type OrderType = "dine_in" | "takeaway";
+export const ORDER_TYPE_LABEL: Record<OrderType, string> = { dine_in: "Dine-in", takeaway: "Takeaway" };
+
 export type Bill = {
   id: string;
   invoiceNo: string;
@@ -117,6 +121,8 @@ export type Bill = {
   manualDiscount: number;
   discount: number;
   extra: number;
+  orderType: OrderType;
+  packaging: number;
   /** true = GST invoice (tax added on top); false = non-GST bill */
   isGst: boolean;
   gstPercent: number;
@@ -431,7 +437,7 @@ export type BirthdayConfig = { offers: BirthdayOffer[]; selected: string; templa
 export type AdminState = Omit<DB, "settings" | "users"> & {
   birthdays: BirthdayEntry[];
   birthdayConfig: BirthdayConfig;
-  settings: ShopDetails & { shopName: string; publicUrl: string; walkInsOnly: boolean; kotEnabled: boolean; orderingEnabled: boolean; upiId: string; upiName: string; upiPhone: string; upiQrMinutes: number; tableCount: number; printFormat: string; theme: Theme };
+  settings: ShopDetails & { shopName: string; publicUrl: string; walkInsOnly: boolean; kotEnabled: boolean; orderingEnabled: boolean; upiId: string; upiName: string; upiPhone: string; upiQrMinutes: number; tableCount: number; printFormat: string; theme: Theme; packagingCharge: number; packagingPer: "bill" | "item" };
   users: PublicUser[];
   /** how loyalty points are earned, so each item can show what it earns */
   loyaltyEarn: Pick<LoyaltyConfig, "enabled" | "earn" | "display">;
