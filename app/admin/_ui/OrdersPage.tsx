@@ -7,6 +7,7 @@ import { computeBill, gstSplit, payLabel, payParts, round2, rupee, shopToday } f
 import { rangeOf, type Period } from "@/lib/analytics";
 import { useAdmin } from "./Store";
 import { billText, waLink } from "./receipt";
+import { WaEdit, openWa } from "./WaEdit";
 import PrintModal from "./PrintModal";
 import { ItemSelect } from "./ItemSelect";
 import { Badge, Btn, Empty, Field, Icon, Modal, Page, PageHead, SearchBox, Switch, WaIcon, cx, downloadExcel, fmtDate, fmtDateTime, fmtTime, inputCls } from "./kit";
@@ -148,6 +149,7 @@ export default function OrdersPage() {
                             <WaIcon size={18} />
                           </a>
                         )}
+                        {b.customerPhone && <WaEdit className="h-9 w-9 md:h-8 md:w-8" to={b.customerPhone} text={() => billText(b, s.settings.shopName, s.settings.publicUrl)} onSend={(t) => openWa(waLink(b.customerPhone, t))} />}
                         <button type="button" title="View details" aria-label="View details" onClick={() => setBill(b)} className="grid h-9 w-9 place-items-center md:h-8 md:w-8 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200">
                           <Icon name="eye" size={16} />
                         </button>
@@ -418,6 +420,7 @@ export default function OrdersPage() {
                   <WaIcon size={16} /> WhatsApp
                 </a>
               )}
+              {bill.customerPhone && <WaEdit className="h-10 rounded-xl" label="Edit message" to={bill.customerPhone} text={() => billText(bill, s.settings.shopName, s.settings.publicUrl)} onSend={(t) => openWa(waLink(bill.customerPhone, t))} />}
               <a href={`/invoice/${bill.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center rounded-xl border border-slate-200 px-4 text-[13px] font-semibold text-slate-700 hover:bg-slate-50">
                 View invoice
               </a>

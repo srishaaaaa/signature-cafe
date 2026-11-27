@@ -5,7 +5,8 @@ import { rupee } from "@/lib/money";
 import type { Product } from "@/lib/types";
 import type { GiftOffer, LoyaltyState, Reward } from "@/lib/loyalty/types";
 import { useAdmin } from "../Store";
-import { Badge, Btn, Card, Field, Modal, cx, downloadExcel, inputLineCls } from "../kit";
+import { Badge, Btn, Card, Field, Modal, WaIcon, cx, downloadExcel, inputLineCls } from "../kit";
+import { OfferSend, type Scope } from "./OfferSend";
 import { ItemSelect } from "../ItemSelect";
 
 const TXT = "text-[12.5px] text-slate-500";
@@ -21,6 +22,29 @@ export default function Rewards({ d }: { d: LoyaltyState }) {
   const points = gifts.filter((r) => r.trigger === "points");
   const spend = gifts.filter((r) => r.trigger === "milestone");
   const on = d.config.gifts;
+
+  /* "Tell customers": a WhatsApp message announcing the gift or offer, written from its details and
+     editable before sending ({name} and {shop} are filled in for each customer). */
+  const [tell, setTell] = useState<{ title: string; template: string; who: string; scope: Scope } | null>(null);
+  const till = (endsOn: string | null | undefined) => (endsOn ? `\nValid till ${endsOn.split("-").reverse().join("/")}.` : "");
+  const tellReward = (r: Reward) => {
+    const what = `*${r.giftQty} × ${nameOf(r.productId)}* FREE!`;
+    const body =
+      r.trigger === "points"
+        ? `Collect *${r.pointsCost} loyalty points* and get ${what}\nYou earn points on every bill — ask us for your balance.`
+        : `For every *${rupee(r.milestoneAmount)}* you spend, get ${what}`;
+    setTell({ title: `Tell customers · ${r.name}`, who: r.name, scope: "members", template: `Hi {name}! 🎁 Something new at {shop}:\n\n${body}${till(r.endsOn)}\n\nSee you soon!` });
+  };
+  const tellOffer = (o: GiftOffer) => {
+    const when = o.type === "spend" ? `On bills of *${rupee(o.minBill)}* or more${o.productId ? ` with ${o.buyQty} × ${nameOf(o.productId)}` : ""}, get` : `Buy *${o.buyQty} × ${nameOf(o.productId)}* and get`;
+    const only = o.audience === "members" ? "\nOnly for our loyalty members." : "";
+    setTell({
+      title: `Tell customers · ${o.name}`,
+      who: o.name,
+      scope: o.audience === "members" ? "members" : "everyone",
+      template: `Hi {name}! 🎉 New offer at {shop}:\n\n${when} *${o.giftQty} × ${nameOf(o.giftProductId)}* FREE!${only}${till(o.endsOn)}\n\nSee you soon!`,
+    });
+  };
 
   const removeReward = async (r: Reward) => {
     if (!(await confirm({ title: `Remove "${r.name}"?`, body: "Customers can no longer get it. If it has already been unlocked or claimed, it is switched off instead so the history stays.", ok: "Remove", danger: true }))) return;
@@ -63,7 +87,7 @@ export default function Rewards({ d }: { d: LoyaltyState }) {
         {!on.points && <Off what="points-based gifts" />}
         <List empty="No points-based gifts yet.">
           {points.map((r) => (
-            <Row key={r.id} name={r.name} line={`${r.giftQty} × ${nameOf(r.productId)} · ${r.pointsCost} points${r.perCustomerLimit ? ` · max ${r.perCustomerLimit} each` : ""}${r.maxRedemptions ? ` · ${r.redeemed}/${r.maxRedemptions} total` : ""}${r.startsOn || r.endsOn ? ` · ${r.startsOn ?? "…"} to ${r.endsOn ?? "…"}` : ""}`} active={r.active} used={r.redeemed} onEdit={() => setReward({ trigger: "points", r })} onToggle={() => toggleReward(r)} onRemove={() => removeReward(r)} />
+            <Row key={r.id} name={r.name} line={`${r.giftQty} × ${nameOf(r.productId)} · ${r.pointsCost} points${r.perCustomerLimit ? ` · max ${r.perCustomerLimit} each` : ""}${r.maxRedemptions ? ` · ${r.redeemed}/${r.maxRedemptions} total` : ""}${r.startsOn || r.endsOn ? ` · ${r.startsOn ?? "…"} to ${r.endsOn ?? "…"}` : ""}`} active={r.active} used={r.redeemed} onTell={() => tellReward(r)} onEdit={() => setReward({ trigger: "points", r })} onToggle={() => toggleReward(r)} onRemove={() => removeReward(r)} />
           ))}
         </List>
       </Card>
@@ -80,7 +104,7 @@ export default function Rewards({ d }: { d: LoyaltyState }) {
         {!on.milestone && <Off what="spending rewards" />}
         <List empty="No spending rewards yet.">
           {spend.map((r) => (
-            <Row key={r.id} name={r.name} line={`${r.giftQty} × ${nameOf(r.productId)} · every ${rupee(r.milestoneAmount)} spent${r.perCustomerLimit ? ` · max ${r.perCustomerLimit} each` : ""}${r.maxRedemptions ? ` · ${r.redeemed}/${r.maxRedemptions} total` : ""}${r.startsOn || r.endsOn ? ` · ${r.startsOn ?? "…"} to ${r.endsOn ?? "…"}` : ""}`} active={r.active} used={r.redeemed} onEdit={() => setReward({ trigger: "milestone", r })} onToggle={() => toggleReward(r)} onRemove={() => removeReward(r)} />
+            <Row key={r.id} name={r.name} line={`${r.giftQty} × ${nameOf(r.productId)} · every ${rupee(r.milestoneAmount)} spent${r.perCustomerLimit ? ` · max ${r.perCustomerLimit} each` : ""}${r.maxRedemptions ? ` · ${r.redeemed}/${r.maxRedemptions} total` : ""}${r.startsOn || r.endsOn ? ` · ${r.startsOn ?? "…"} to ${r.endsOn ?? "…"}` : ""}`} active={r.active} used={r.redeemed} onTell={() => tellReward(r)} onEdit={() => setReward({ trigger: "milestone", r })} onToggle={() => toggleReward(r)} onRemove={() => removeReward(r)} />
           ))}
         </List>
       </Card>
@@ -102,6 +126,7 @@ export default function Rewards({ d }: { d: LoyaltyState }) {
               name={o.name}
               line={`${o.audience === "members" ? "Loyalty customers only · " : ""}${o.maxTotal ? `${o.given}/${o.maxTotal} given · ` : ""}${o.type === "spend" ? `Bill of ${rupee(o.minBill)} or more${o.productId ? ` with ${o.buyQty} × ${nameOf(o.productId)}` : ""}` : `Buy ${o.buyQty} × ${nameOf(o.productId)}`} → ${o.giftQty} × ${nameOf(o.giftProductId)}${o.repeatable ? " (repeats)" : ""}${o.startsOn || o.endsOn ? ` · ${o.startsOn ?? "…"} to ${o.endsOn ?? "…"}` : ""}`}
               active={o.active}
+              onTell={() => tellOffer(o)}
               onEdit={() => setOffer({ o })}
               onToggle={() => toggleOffer(o)}
               onRemove={() => removeOffer(o)}
@@ -112,6 +137,7 @@ export default function Rewards({ d }: { d: LoyaltyState }) {
 
       {reward && <RewardForm trigger={reward.trigger} r={reward.r} products={s.products} onClose={() => setReward(null)} />}
       {offer && <OfferForm o={offer.o} products={s.products} onClose={() => setOffer(null)} />}
+      {tell && <OfferSend title={tell.title} template={tell.template} who={tell.who} scope={tell.scope} onClose={() => setTell(null)} />}
     </div>
   );
 }
@@ -122,7 +148,7 @@ function List({ children, empty }: { children: React.ReactNode[]; empty: string 
   return children.length ? <ul className="space-y-2">{children}</ul> : <p className="py-4 text-center text-[13px] text-slate-400">{empty}</p>;
 }
 
-function Row({ name, line, active, used, onEdit, onToggle, onRemove }: { name: string; line: string; active: boolean; used?: number; onEdit: () => void; onToggle: () => void; onRemove: () => void }) {
+function Row({ name, line, active, used, onTell, onEdit, onToggle, onRemove }: { name: string; line: string; active: boolean; used?: number; onTell: () => void; onEdit: () => void; onToggle: () => void; onRemove: () => void }) {
   return (
     <li className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-100 bg-white px-3.5 py-3">
       <span className="min-w-0">
@@ -130,7 +156,10 @@ function Row({ name, line, active, used, onEdit, onToggle, onRemove }: { name: s
         <span className="mt-0.5 block text-[12.5px] text-slate-600">{line}</span>
         {!!used && <span className="text-[11.5px] text-slate-400">Claimed {used} time{used === 1 ? "" : "s"}</span>}
       </span>
-      <span className="flex gap-2">
+      <span className="flex flex-wrap gap-2">
+        <Btn size="sm" kind="green" onClick={onTell} disabled={!active} title={active ? "Send this offer to customers on WhatsApp" : "Turn it on first"}>
+          <WaIcon size={14} /> Tell customers
+        </Btn>
         <Btn size="sm" onClick={onToggle}>
           {active ? "Turn off" : "Turn on"}
         </Btn>

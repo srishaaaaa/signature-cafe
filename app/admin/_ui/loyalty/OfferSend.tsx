@@ -12,6 +12,7 @@ import { useAdmin } from "../Store";
 import { waLink } from "../receipt";
 import { Btn, Empty, Field, Modal, WaIcon, cx, fmtDate, inputLineCls } from "../kit";
 import { useLoyaltyState } from "./shared";
+import { WaEdit, openWa } from "../WaEdit";
 
 export type Recipient = { customer: LoyaltyCustomer };
 export type Scope = "members" | "nonMembers" | "everyone";
@@ -75,8 +76,8 @@ export function OfferSend({ title, template, who, scope = "members", filter, onS
         ) : (
           <ul className="adm-scroll max-h-[340px] divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-100">
             {list.map((r) => (
-              <li key={r.key} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
-                <span className="min-w-0">
+              <li key={r.key} className="flex items-center gap-2 px-3.5 py-2.5">
+                <span className="min-w-0 flex-1">
                   <b className="block truncate text-[13.5px] text-slate-900">{r.name}</b>
                   <span className="text-[11.5px] text-slate-500">
                     {r.phone} · {r.sub}
@@ -91,6 +92,7 @@ export function OfferSend({ title, template, who, scope = "members", filter, onS
                 >
                   <WaIcon size={14} /> {sent.has(r.key) ? "Sent ✓ · again" : "Send"}
                 </a>
+                <WaEdit to={r.name} text={() => text(r)} onSend={(t) => (openWa(waLink(r.phone, t)), mark(r))} />
               </li>
             ))}
           </ul>

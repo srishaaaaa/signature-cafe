@@ -6,6 +6,7 @@ import { couponStatus, rupee } from "@/lib/money";
 import { couponPdf, sharePdf } from "@/lib/couponPdf";
 import { useAdmin } from "./Store";
 import { waLink } from "./receipt";
+import { WaEdit, openWa } from "./WaEdit";
 import { OfferSend } from "./loyalty/OfferSend";
 import { Badge, Btn, Empty, Icon, Kpi, Modal, Page, PageHead, SearchBox, Switch, WaIcon, cx, downloadExcel, labelCls } from "./kit";
 
@@ -413,6 +414,20 @@ function SendCoupon({ coupon: c, onClose }: { coupon: Coupon; onClose: () => voi
           <button type="button" disabled={!ok || busy} onClick={viaPdf} className="flex h-12 items-center justify-center gap-1.5 rounded-xl border border-[#22c55e] bg-white px-2 text-[13px] font-bold leading-tight text-[#16a34a] hover:bg-emerald-50 disabled:opacity-45">
             <Icon name="download" size={15} /> {busy ? "Working…" : "Generate & share PDF"}
           </button>
+        </div>
+        <div className="flex justify-end">
+          <WaEdit
+            label="Edit WhatsApp message"
+            disabled={!ok || busy}
+            to={phone}
+            text={() => [...message, "", `Download your coupon: ${link}`].join("\n")}
+            onSend={async (t) => {
+              openWa(waLink(phone, t));
+              setBusy(true);
+              await record("whatsapp");
+              setBusy(false);
+            }}
+          />
         </div>
       </div>
     </Modal>

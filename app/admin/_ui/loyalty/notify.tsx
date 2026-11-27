@@ -8,6 +8,7 @@
 import { useState } from "react";
 import type { LoyaltyMessage } from "@/lib/loyalty/types";
 import { useAdmin } from "../Store";
+import { WaEdit } from "../WaEdit";
 import { Badge, Btn, Modal, WaIcon, fmtDateTime } from "../kit";
 
 export const MSG_LABEL: Record<string, string> = {
@@ -25,11 +26,11 @@ export const waUrl = (m: Pick<LoyaltyMessage, "phone" | "text">) => `https://wa.
 /** Opens WhatsApp with a message and records that staff did so. */
 export function useSendMessage(onDone?: (m: LoyaltyMessage) => void) {
   const { act } = useAdmin();
-  return async (m: LoyaltyMessage) => {
+  return async (m: LoyaltyMessage, text?: string) => {
     const w = window.open("about:blank", "_blank"); // opened first so the browser doesn't block it
     const r = await act<LoyaltyMessage>("loyalty.msg.open", { id: m.id });
     if (r.ok) {
-      if (w) w.location.href = waUrl(m);
+      if (w) w.location.href = waUrl({ phone: m.phone, text: text ?? m.text }); // staff may have edited the wording
       onDone?.(r.result);
     } else w?.close();
   };
@@ -73,6 +74,7 @@ export function MessageRow({ m: given, onChanged }: { m: LoyaltyMessage; onChang
             <WaIcon size={14} /> {m.status === "opened" ? "Open again" : "Send on WhatsApp"}
           </Btn>
         )}
+        {m.status !== "failed" && <WaEdit className="h-8" label="Edit message" text={m.text} onSend={(t) => send(m, t)} />}
         {m.status === "failed" && role === "admin" && (
           <Btn size="sm" onClick={retry}>
             Retry

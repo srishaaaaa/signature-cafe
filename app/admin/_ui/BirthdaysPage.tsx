@@ -5,6 +5,7 @@ import type { BirthdayConfig, BirthdayEntry, BirthdayOffer } from "@/lib/types";
 import { shopToday } from "@/lib/money";
 import { useAdmin } from "./Store";
 import { waLink } from "./receipt";
+import { WaEdit, openWa } from "./WaEdit";
 import { Badge, Btn, Card, Empty, Field, Icon, Modal, Page, PageHead, SearchBox, Tabs, WaIcon, cx, csv, downloadText, inputCls } from "./kit";
 
 /* Date of Birth: save customers' birthdays (from Billing or here), see who is celebrating in a date or range, and send each a
@@ -230,6 +231,7 @@ export default function BirthdaysPage() {
         <a href={waLink(r.b.phone, text(r.b.name))} target="_blank" rel="noopener noreferrer" className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[#22c55e] px-3.5 text-[12px] font-extrabold uppercase tracking-wide text-white hover:bg-[#16a34a]">
           <WaIcon size={14} /> Send offer
         </a>
+        <WaEdit className="rounded-xl" to={r.b.phone} text={() => text(r.b.name)} onSend={(t) => openWa(waLink(r.b.phone, t))} />
         <button type="button" onClick={() => setEdit({ phone: r.b.phone, name: r.b.name, dob: r.b.dob, isNew: false })} className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label="Edit birthday">
           <Icon name="edit" size={15} />
         </button>

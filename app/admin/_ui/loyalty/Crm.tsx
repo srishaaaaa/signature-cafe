@@ -7,6 +7,7 @@ import type { PurchaseStats, Segment } from "@/lib/loyalty/types";
 import type { LoyaltyState } from "@/lib/loyalty/types";
 import { useAdmin } from "../Store";
 import { waLink } from "../receipt";
+import { WaEdit, openWa } from "../WaEdit";
 import { Badge, Btn, Empty, SearchBox, WaIcon, cx, downloadExcel, fmtDate, inputLineCls } from "../kit";
 import { Pager, th, td, tableWrap, usePaged, within, type PeriodData } from "./shared";
 
@@ -132,9 +133,12 @@ export default function Crm({ d, pd }: { d: LoyaltyState; pd: PeriodData }) {
                   <div className="mt-3 flex items-center justify-between gap-3">
                     <span className="text-[12px] text-slate-500">Last visit: {st.last ? fmtDate(st.last) : "—"}</span>
                     {c.consent && c.status === "active" ? (
-                      <a href={waLink(c.whatsapp || c.phone, text(c.name))} target="_blank" rel="noopener noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#22c55e] px-3 text-[12px] font-extrabold uppercase tracking-wide text-white hover:bg-[#16a34a]">
-                        <WaIcon size={13} /> Send
-                      </a>
+                      <span className="inline-flex gap-1.5">
+                        <a href={waLink(c.whatsapp || c.phone, text(c.name))} target="_blank" rel="noopener noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#22c55e] px-3 text-[12px] font-extrabold uppercase tracking-wide text-white hover:bg-[#16a34a]">
+                          <WaIcon size={13} /> Send
+                        </a>
+                        <WaEdit className="h-8 w-8" to={c.name} text={() => text(c.name)} onSend={(t) => openWa(waLink(c.whatsapp || c.phone, t))} />
+                      </span>
                     ) : (
                       <span className="text-[11.5px] text-slate-400">{c.status !== "active" ? "Deactivated" : "No consent"}</span>
                     )}
@@ -186,9 +190,12 @@ export default function Crm({ d, pd }: { d: LoyaltyState; pd: PeriodData }) {
                       <td className={cx(td, "adm-num text-right font-bold")}>{c.available}</td>
                       <td className={cx(td, "pr-4 text-right")}>
                         {c.consent && c.status === "active" ? (
-                          <a href={waLink(c.whatsapp || c.phone, text(c.name))} target="_blank" rel="noopener noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#22c55e] px-3 text-[12px] font-extrabold uppercase tracking-wide text-white hover:bg-[#16a34a]">
-                            <WaIcon size={13} /> Send
-                          </a>
+                          <span className="inline-flex gap-1.5">
+                            <a href={waLink(c.whatsapp || c.phone, text(c.name))} target="_blank" rel="noopener noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#22c55e] px-3 text-[12px] font-extrabold uppercase tracking-wide text-white hover:bg-[#16a34a]">
+                              <WaIcon size={13} /> Send
+                            </a>
+                            <WaEdit className="h-8 w-8" to={c.name} text={() => text(c.name)} onSend={(t) => openWa(waLink(c.whatsapp || c.phone, t))} />
+                          </span>
                         ) : (
                           <span className="text-[11.5px] text-slate-400">{c.status !== "active" ? "Deactivated" : "No consent"}</span>
                         )}

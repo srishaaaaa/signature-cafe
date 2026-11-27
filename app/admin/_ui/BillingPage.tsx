@@ -9,6 +9,8 @@ import PrintModal from "./PrintModal";
 import { Receipt, billText, parseFormat, waLink, type PrintFormat } from "./receipt";
 import { Badge, Btn, Icon, Modal, WaIcon, cx, fmtTime, ago } from "./kit";
 import { UpiQrCard } from "./UpiQrCard";
+import { WaCompose, WaEdit, openWa } from "./WaEdit";
+import { useLoyaltyState } from "./loyalty/shared";
 import { pointsPerUnit } from "@/lib/loyalty/engine";
 import { WelcomeStep, type Joined } from "./loyalty/notify";
 import { GiftPanel, MemberStrip, RedeemBox, SavedLoyalty, earnPreview, giftEntitlements, loyaltyCalc, selectedGift, useBillOffers, useLoyaltyLookup } from "./loyalty/billing";
@@ -115,6 +117,94 @@ export default function BillingPage({ sessionId }: { sessionId?: string }) {
   const savedDob = useMemo(() => s.birthdays.find((b) => b.phone === phone)?.dob ?? "", [s.birthdays, phone]);
   const dob = dobEdit ?? savedDob;
 
+  /* ---------- customer suggestions ----------
+     Everyone the shop knows by mobile number — from past bills, saved birthdays and loyalty
+     members. Typing in the name or mobile box lists the matches; picking one fills both in
+     (and the birthday and loyalty details follow from the number). */
+  const { data: loyData } = useLoyaltyState();
+  type Person = { phone: string; name: string; visits: number; last: number; member: boolean; points: number };
+  const people = useMemo<Person[]>(() => {
+    const m = new Map<string, Person>();
+    const get = (ph: string) => m.get(ph) ?? (m.set(ph, { phone: ph, name: "", visits: 0, last: 0, member: false, points: 0 }), m.get(ph)!);
+    for (const b of s.bills) {
+      if (b.status !== "completed" || !okPhone(b.customerPhone)) continue;
+      const x = get(b.customerPhone);
+      x.visits++;
+      if (b.createdAt >= x.last) {
+        x.last = b.createdAt;
+        if (b.customerName.trim() && b.customerName !== "Walk-in customer") x.name = b.customerName.trim();
+      }
+    }
+    for (const b of s.birthdays) if (okPhone(b.phone) && b.name.trim()) get(b.phone).name ||= b.name.trim();
+    for (const c of loyData?.customers ?? []) {
+      if (!okPhone(c.phone) || c.status !== "active") continue;
+      const x = get(c.phone);
+      x.member = true;
+      x.points = c.available;
+      if (c.name.trim()) x.name = c.name.trim();
+    }
+    return [...m.values()];
+  }, [s.bills, s.birthdays, loyData]);
+  const [suggest, setSuggest] = useState<"name" | "phone" | null>(null);
+  const [hiP, setHiP] = useState(0);
+  const matches = useMemo(() => {
+    if (!suggest) return [];
+    const q = suggest === "name" ? name.trim().toLowerCase() : phone;
+    if (suggest === "name" ? q.length < 1 : q.length < 2) return [];
+    return people
+      .filter((p) => (p.phone !== phone || p.name !== name) && (suggest === "name" ? p.name.toLowerCase().split(/\s+/).some((w) => w.startsWith(q)) || p.name.toLowerCase().startsWith(q) : p.phone.includes(q)))
+      .sort((a, b) => Number(b.member) - Number(a.member) || b.last - a.last)
+      .slice(0, 6);
+  }, [suggest, name, phone, people]);
+  const choose = (p: Person) => {
+    setName(p.name);
+    setPhone(p.phone);
+    setLSel("");
+    setLPts("");
+    setDobEdit(null);
+    setSuggest(null);
+    setHiP(0);
+  };
+  const suggestKeys = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!matches.length) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHiP((h) => Math.min(matches.length - 1, h + 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHiP((h) => Math.max(0, h - 1));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      choose(matches[Math.min(hiP, matches.length - 1)]);
+    } else if (e.key === "Escape") setSuggest(null);
+  };
+  const suggestList = (which: "name" | "phone") =>
+    suggest === which && matches.length > 0 ? (
+      <ul role="listbox" className={cx("absolute top-full z-30 mt-1 max-h-[300px] w-[min(400px,calc(100vw-2rem))]", which === "name" ? "left-0" : "right-0", " overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-[0_18px_40px_-16px_rgba(15,23,42,.35)]")}>
+        {matches.map((p, i) => (
+          <li key={p.phone} role="option" aria-selected={i === hiP}>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onMouseEnter={() => setHiP(i)}
+              onClick={() => choose(p)}
+              className={cx("flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left", i === hiP ? "bg-slate-100" : "hover:bg-slate-50")}
+            >
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-100 text-[13px] font-bold text-slate-600">{(p.name || "?").slice(0, 1).toUpperCase()}</span>
+              <span className="min-w-0 flex-1">
+                <b className="block truncate text-[13.5px] text-slate-900">{p.name || "No name saved"}</b>
+                <span className="block truncate text-[11.5px] text-slate-500">
+                  {p.phone}
+                  {p.visits ? ` · ${p.visits} bill${p.visits === 1 ? "" : "s"}` : ""}
+                </span>
+              </span>
+              {p.member && <Badge tone="amber" className="shrink-0">Loyalty · {p.points} pts</Badge>}
+            </button>
+          </li>
+        ))}
+      </ul>
+    ) : null;
+
   const f = mode === "tab" && sel ? floor.find((x) => x.session.id === sel) ?? null : null;
   const stale = f && sig && sigOf(f) !== sig;
   const lost = mode === "tab" && sel && !f;
@@ -212,9 +302,10 @@ export default function BillingPage({ sessionId }: { sessionId?: string }) {
   const approveBill = () => f && act("tab.approve", { id: f.session.id, amount: calc.total });
   const withdrawBill = () => f && act("tab.unapprove", { id: f.session.id });
   /* WhatsApp message with the amount, the UPI ID and a link to the payment page (a QR + "Open my UPI app") */
-  const sendPayLink = async () => {
+  const [payDraft, setPayDraft] = useState<string | null>(null); // the pay-link message, open for editing
+  const sendPayLink = async (edit = false) => {
     const amount = approved?.amount ?? calc.total;
-    const w = window.open("about:blank", "_blank"); // opened first so the browser doesn't block it
+    const w = edit ? null : window.open("about:blank", "_blank"); // opened first so the browser doesn't block it
     try {
       const r = await fetch("/api/admin/pay-link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount, name }) });
       const d = await r.json();
@@ -230,6 +321,7 @@ export default function BillingPage({ sessionId }: { sessionId?: string }) {
         "",
         "After paying, please show the confirmation at the counter.",
       ].join("\n");
+      if (edit) return setPayDraft(text); // staff edit it first; sending from the editor marks it as sent
       if (w) w.location.href = waLink(phone, text);
       setLinkSent(true); // if they then pay, it is recorded as paid through the WhatsApp link
     } catch (e) {
@@ -405,13 +497,35 @@ export default function BillingPage({ sessionId }: { sessionId?: string }) {
               <Icon name="users" size={18} className="text-red-600" /> Customer Details
             </h2>
             <div className="grid gap-3 sm:grid-cols-2">
-              <label>
+              <label className="relative">
                 <span className={lbl}>Customer name</span>
-                <input className={big} value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter name" maxLength={60} />
+                <input
+                  className={big}
+                  value={name}
+                  onChange={(e) => (setName(e.target.value), setSuggest("name"), setHiP(0))}
+                  onFocus={() => setSuggest("name")}
+                  onBlur={() => setSuggest(null)}
+                  onKeyDown={suggestKeys}
+                  placeholder="Enter name"
+                  maxLength={60}
+                  autoComplete="off"
+                />
+                {suggestList("name")}
               </label>
-              <label>
+              <label className="relative">
                 <span className={lbl}>Mobile number (WhatsApp)</span>
-                <input className={cx(big, phone && !okPhone(phone) && "border-amber-500")} value={phone} onChange={(e) => (setPhone(tenDigits(e.target.value)), setLSel(""), setLPts(""))} placeholder="Enter 10-digit number" inputMode="numeric" autoComplete="tel-national" />
+                <input
+                  className={cx(big, phone && !okPhone(phone) && "border-amber-500")}
+                  value={phone}
+                  onChange={(e) => (setPhone(tenDigits(e.target.value)), setLSel(""), setLPts(""), setSuggest("phone"), setHiP(0))}
+                  onFocus={() => setSuggest("phone")}
+                  onBlur={() => setSuggest(null)}
+                  onKeyDown={suggestKeys}
+                  placeholder="Enter 10-digit number"
+                  inputMode="numeric"
+                  autoComplete="off"
+                />
+                {suggestList("phone")}
               </label>
               <label>
                 <span className={lbl}>Birthday (optional)</span>
@@ -806,9 +920,12 @@ export default function BillingPage({ sessionId }: { sessionId?: string }) {
                     </div>
                   )}
                   {okPhone(phone) && (
-                    <button type="button" onClick={sendPayLink} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-[#22c55e] bg-white text-[13px] font-bold text-[#16a34a] hover:bg-emerald-50">
+                    <span className="flex gap-1.5">
+<button type="button" onClick={() => sendPayLink()} className="inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl border border-[#22c55e] bg-white text-[13px] font-bold text-[#16a34a] hover:bg-emerald-50">
                       <WaIcon size={16} /> Send payment link on WhatsApp
                     </button>
+                      <button type="button" onClick={() => sendPayLink(true)} title="Edit the message before sending" aria-label="Edit WhatsApp message" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"><Icon name="edit" size={15} /></button>
+                    </span>
                   )}
                 </div>
               )}
@@ -918,9 +1035,12 @@ export default function BillingPage({ sessionId }: { sessionId?: string }) {
           done && (
             <div className={cx("grid w-full gap-2", done.customerPhone ? "grid-cols-3" : "grid-cols-2")}>
               {done.customerPhone && (
-                <a href={waLink(done.customerPhone, billText(done, shop, s.settings.publicUrl))} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#22c55e] px-3 text-[13px] font-semibold text-white hover:bg-[#16a34a]">
-                  <WaIcon size={16} /> WhatsApp
-                </a>
+                <span className="flex gap-1.5">
+                  <a href={waLink(done.customerPhone, billText(done, shop, s.settings.publicUrl))} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-[#22c55e] px-3 text-[13px] font-semibold text-white hover:bg-[#16a34a]">
+                    <WaIcon size={16} /> WhatsApp
+                  </a>
+                  <WaEdit className="h-10 w-10 rounded-xl" to={done.customerPhone} text={() => billText(done, shop, s.settings.publicUrl)} onSend={(t) => openWa(waLink(done.customerPhone, t))} />
+                </span>
               )}
               <Btn icon="print" className="w-full" onClick={() => setPrintFor(done)}>
                 Print receipt
@@ -978,6 +1098,7 @@ export default function BillingPage({ sessionId }: { sessionId?: string }) {
           </div>
         )}
       </Modal>
+      {payDraft !== null && <WaCompose title="Edit the payment message" to={phone} text={payDraft} onSend={(t) => (openWa(waLink(phone, t)), setLinkSent(true))} onClose={() => setPayDraft(null)} />}
     </div>
   );
 }
