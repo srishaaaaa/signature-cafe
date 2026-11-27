@@ -1232,7 +1232,8 @@ export async function runOp(tx: Tx, op: string, a: Args, role: string): Promise<
           patch.themeLight = String(t.light).toLowerCase();
         }
         if (a.packagingCharge !== undefined) {
-          const v = num(a.packagingCharge);
+          // a blank box means no packaging charge
+          const v = typeof a.packagingCharge === "string" && a.packagingCharge.trim() === "" ? 0 : num(a.packagingCharge);
           if (!(v >= 0 && v <= 10000)) throw new ApiError("Packaging charge should be between ₹0 and ₹10,000.");
           patch.packagingCharge = round2(v);
         }
